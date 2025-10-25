@@ -23,6 +23,74 @@ const CONTENT_LIMITS = {
   MAX_DOMAINS_PER_SOURCE: 2, // Maximum pages per domain for diversity
 };
 
+// Trusted academic and research domains
+const TRUSTED_DOMAINS = [
+  // Academic publishers
+  'ieee.org',
+  'acm.org',
+  'springer.com',
+  'arxiv.org',
+  'nature.com',
+  'science.org',
+  'sciencedirect.com',
+  'wiley.com',
+  'tandfonline.com',
+  'sagepub.com',
+  'mdpi.com',
+  'frontiersin.org',
+  'plos.org',
+  'oup.com',  // Oxford University Press
+  'cambridge.org',
+  
+  // Research repositories
+  'researchgate.net',
+  'semanticscholar.org',
+  'scholar.google.com',
+  'pubmed.ncbi.nlm.nih.gov',
+  'ncbi.nlm.nih.gov',
+  'biorxiv.org',
+  'medrxiv.org',
+  'ssrn.com',
+  
+  // University domains (common patterns)
+  '.edu',
+  'mit.edu',
+  'stanford.edu',
+  'berkeley.edu',
+  'harvard.edu',
+  'oxford.ac.uk',
+  'cambridge.ac.uk',
+  
+  // Research institutions
+  'nist.gov',
+  'nasa.gov',
+  'cern.ch',
+  'nih.gov',
+  'nsf.gov',
+];
+
+/**
+ * Check if a URL is from a trusted academic/research domain
+ */
+function isTrustedDomain(url) {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname.toLowerCase();
+    
+    // Check if hostname matches or ends with any trusted domain
+    return TRUSTED_DOMAINS.some(trusted => {
+      // For patterns like '.edu', check if domain ends with it
+      if (trusted.startsWith('.')) {
+        return hostname.endsWith(trusted);
+      }
+      // For full domains, check exact match or subdomain
+      return hostname === trusted || hostname.endsWith('.' + trusted);
+    });
+  } catch {
+    return false;
+  }
+}
+
 function validateConfig() {
   const missing = [];
   if (!CONFIG.apiKey) missing.push('BRIGHTDATA_API_KEY');
@@ -40,17 +108,24 @@ function validateInput(query, maxResults) {
 }
 
 /**
- * Selects diverse URLs from search results
+ * Selects diverse URLs from search results, filtering for trusted domains
  */
 function selectDiverseUrls(searchData, maxResults) {
   const urls = [];
   const perDomain = {};
+  let skippedCount = 0;
 
   if (searchData.organic && Array.isArray(searchData.organic)) {
     for (const result of searchData.organic) {
       if (result.link && urls.length < maxResults) {
         try {
           const domain = new URL(result.link).hostname.replace('www.', '');
+
+          // Filter: Only accept trusted academic/research domains
+          if (!isTrustedDomain(result.link)) {
+            skippedCount++;
+            continue;
+          }
 
           if ((perDomain[domain] || 0) < CONTENT_LIMITS.MAX_DOMAINS_PER_SOURCE) {
             urls.push({
@@ -68,7 +143,11 @@ function selectDiverseUrls(searchData, maxResults) {
     }
   }
 
-  return { urls, domainCount: Object.keys(perDomain).length };
+  return { 
+    urls, 
+    domainCount: Object.keys(perDomain).length,
+    skippedCount 
+  };
 }
 
 /**
@@ -79,11 +158,11 @@ async function generateSummary(llm, content, sourceTitle, query) {
     const response = await llm.invoke([
       {
         role: 'system',
-        content: 'You are a research assistant. Create a concise 2-3 paragraph summary of the provided content, focusing on information relevant to the research query. Highlight key findings and important details.',
+        content: 'You are a research assistant specializing in creating educational summaries. Your goal is to extract and explain the core concepts, ideas, and findings from content. Focus on WHAT the content teaches and WHY it matters, not on publication details or metadata. When technical terms appear, briefly explain them in simple language. Make the summary accessible to someone learning about the topic.',
       },
       {
         role: 'user',
-        content: `Research Query: ${query}\n\nSource Title: ${sourceTitle}\n\nContent:\n${content}\n\nProvide a comprehensive summary:`,
+        content: `Research Query: ${query}\n\nSource: ${sourceTitle}\n\n${content}\n\nCreate a 2-3 paragraph summary that:\n1. Explains the main concepts and key ideas presented\n2. Defines any technical terminology in simple terms\n3. Highlights why these findings or concepts are significant\n4. Focuses on the substance and insights, NOT on publication details, author names, or paper metadata\n\nSummary:`,
       },
     ]);
     return response.content;
