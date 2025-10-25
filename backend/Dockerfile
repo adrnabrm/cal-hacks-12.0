@@ -9,7 +9,7 @@ WORKDIR /app
 # Copy package files first (for layer caching)
 COPY package*.json ./
 
-# Install dependencies
+# Install dependencies + express
 RUN npm ci --omit=dev
 
 # Copy application source

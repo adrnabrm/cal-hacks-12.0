@@ -20,14 +20,15 @@
   "author": "Bright Data",
   "license": "MIT",
   "dependencies": {
-    "dotenv": "^16.4.5",
-    "node-fetch": "^3.3.2",
     "@anthropic-ai/sdk": "^0.32.1",
     "@langchain/anthropic": "^0.3.10",
     "@langchain/core": "^0.3.0",
+    "@langchain/google-genai": "^0.1.2",
     "@langchain/langgraph": "^0.4.8",
     "@langchain/mcp-adapters": "^0.6.0",
-    "@langchain/google-genai": "^0.1.2"
+    "dotenv": "^16.4.5",
+    "express": "^5.1.0",
+    "node-fetch": "^3.3.2"
   },
   "engines": {
     "node": ">=18.0.0"
