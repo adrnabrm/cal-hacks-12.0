@@ -1,22 +1,28 @@
-FROM python:3.11-slim AS base
+# ============================================================
+# Stage 1 — Base Node.js environment
+# ============================================================
+FROM node:22-slim AS base
 
-# set working directory
+# Set working directory
 WORKDIR /app
 
-# set enviromental variables
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+# Copy package files first (for layer caching)
+COPY package*.json ./
 
-# install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
+# Install dependencies
+RUN npm ci --omit=dev
 
-# install python dependencies
-COPY requirements.txt .
-RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
-
-# copy application code 
+# Copy application source
 COPY . .
 
-# open server local host on port 8000
-EXPOSE 8000
-CMD ["uvicorn","app.main:app","--host","0.0.0.0","--port","8000","--reload"]
+# Set environment variables
+ENV NODE_ENV=production \
+    GOOGLE_MODEL=gemini-2.5-flash \
+    PORT=8000
 
+# Expose port (optional — only if you plan to run a server)
+EXPOSE 8000
+
+# Default command — runs the main workflow
+# You can override this at runtime with: docker run mcp-agent node src/brightdata_mcp_demo.js "AI news 2025"
+CMD ["npm", "start"]
