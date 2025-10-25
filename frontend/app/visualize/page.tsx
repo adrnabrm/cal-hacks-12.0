@@ -8,7 +8,7 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, X } from 'lucide-react';
 
-// Mock dataset
+// --- Sample data ---
 const data = {
   id: 'seed',
   title: 'Seed Paper: Climate Change Impact',
@@ -73,6 +73,7 @@ const data = {
 export default function VisualizePage() {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [popupNode, setPopupNode] = useState<any | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!svgRef.current) return;
@@ -94,33 +95,47 @@ export default function VisualizePage() {
     // Zoom + pan
     const zoom = d3
       .zoom()
-      .scaleExtent([0.6, 2])
+      .scaleExtent([0.3, 5]) // more flexible zoom
       .translateExtent([
-        [0, -100],
-        [width, height - 120],
+        [-width * 2, -height * 2],   // far larger pan bounds
+        [width * 3, height * 3],
       ])
-      .on('zoom', (e) => g.attr('transform', e.transform));
+      .filter((event) => {
+        // disable zoom on right-click or shift-click
+        return !event.button && !event.shiftKey;
+      })
+      .on('zoom', (event) => {
+        g.attr('transform', event.transform);
+      });
+
+    // Apply zoom behavior
     svg.call(zoom);
 
-    // --- Tree layout
+    // Start centered on the seed (original behavior)
+    svg.call(
+      zoom.transform,
+      d3.zoomIdentity
+        .translate(0, 0) // no forced offset
+        .scale(1)        // original zoom level
+    );
+
+    // Visual feedback for dragging
+    svg
+      .on('mousedown', () => svg.style('cursor', 'grabbing'))
+      .on('mouseup', () => svg.style('cursor', 'grab'));
+
+    // Tree layout
     const root = d3.hierarchy(data);
-    // more vertical room so depths are clearly separated
-    // Tree layout with more vertical room between siblings
-const treeLayout = d3.tree().nodeSize([240, 220]);
-treeLayout(root);
-
-// Apply small random Y-offsets to leaf nodes for a natural look
-root.descendants().forEach((d: any) => {
-  if (!d.children) {
-    d.y += Math.random() * 40 - 20; // ±20px asymmetry
-  }
-});
-
+    const treeLayout = d3.tree().nodeSize([240, 220]);
+    treeLayout(root);
+    root.descendants().forEach((d: any) => {
+      if (!d.children) d.y += Math.random() * 40 - 20;
+    });
 
     const seedY = height - 100;
     const seedX = width / 2;
 
-    // --- Ground
+    // --- Ground / Soil ---
     const defs = svg.append('defs');
     const gradient = defs
       .append('linearGradient')
@@ -168,7 +183,6 @@ root.descendants().forEach((d: any) => {
       .attr('stroke-width', 6)
       .attr('stroke-linecap', 'round');
 
-    // Stem
     const stem = ground
       .append('line')
       .attr('x1', seedX)
@@ -178,14 +192,12 @@ root.descendants().forEach((d: any) => {
       .attr('stroke', '#166534')
       .attr('stroke-width', 4)
       .attr('stroke-linecap', 'round');
-
     stem.transition().delay(800).duration(1000).attr('y2', seedY - 60);
 
-    // --- Links & Nodes containers
+    // --- Links and Nodes ---
     const linkGroup = treeGroup.append('g').attr('class', 'links');
     const nodeGroup = treeGroup.append('g').attr('class', 'nodes');
 
-    // Bézier link generator (coordinates consistent with node transforms)
     const bezierLink = (d: any) => {
       const radius = 25;
       const sx = d.source.x + seedX;
@@ -193,24 +205,20 @@ root.descendants().forEach((d: any) => {
       const tx = d.target.x + seedX;
       const ty = seedY - d.target.y - radius;
       const midY = (sy + ty) / 2;
-      const siblingOffset = (d.target.x - d.source.x) * 0.3; // nicer spread for many children
+      const siblingOffset = (d.target.x - d.source.x) * 0.3;
       return `M${sx},${sy} C${sx + siblingOffset},${midY} ${tx - siblingOffset},${midY} ${tx},${ty}`;
     };
 
-    // Create links at their final shape first, then animate with true length
-    const links = linkGroup
+    linkGroup
       .selectAll('path.link')
-      .data(root.links(), (l: any) => `${l.source.data.id}->${l.target.data.id}`)
+      .data(root.links())
       .enter()
       .append('path')
-      .attr('class', 'link')
       .attr('fill', 'none')
       .attr('stroke', '#16a34a')
       .attr('stroke-width', 2)
       .attr('d', (d: any) => bezierLink(d))
-      .attr('opacity', 1)
       .each(function () {
-        // compute per-path length -> correct, non-chopped animation
         const len = (this as SVGPathElement).getTotalLength();
         d3.select(this)
           .attr('stroke-dasharray', `${len} ${len}`)
@@ -221,7 +229,6 @@ root.descendants().forEach((d: any) => {
       .duration(900)
       .attr('stroke-dashoffset', 0);
 
-    // Nodes
     const nodes = nodeGroup
       .selectAll('g.node')
       .data(root.descendants(), (d: any) => d.data.id)
@@ -229,7 +236,22 @@ root.descendants().forEach((d: any) => {
       .append('g')
       .attr('class', 'node')
       .attr('transform', (d) => `translate(${d.x + seedX}, ${seedY - 60})`)
-      .style('opacity', 0);
+      .style('opacity', 0)
+      .style('pointer-events', 'all')
+      .on('click', function (_, d: any) {
+        setPopupNode(d.data);
+        setSelectedNodeId(d.data.id);
+
+        // Subtle pulse animation
+        const circle = d3.select(this).select('circle');
+        circle
+          .transition()
+          .duration(150)
+          .attr('r', 35)
+          .transition()
+          .duration(250)
+          .attr('r', d.depth === 0 ? 30 : 25);
+      });
 
     nodes
       .transition()
@@ -249,60 +271,50 @@ root.descendants().forEach((d: any) => {
       .duration(500)
       .attr('r', (d: any) => (d.depth === 0 ? 30 : 25));
 
-    // Title boxes above nodes
     const labelGroups = nodes.append('g').attr('class', 'label-group').attr('transform', 'translate(0, -45)');
     labelGroups.each(function (d: any) {
-  const group = d3.select(this);
-  const title = d.data.title;
+      const group = d3.select(this);
+      const title = d.data.title;
+      const temp = group
+        .append('text')
+        .attr('font-size', 13)
+        .attr('font-weight', 600)
+        .attr('font-family', '"Georgia", "Times New Roman", serif')
+        .text(title);
+      const width = (temp.node() as SVGTextElement).getBBox().width + 20;
+      temp.remove();
 
-  // measure text width dynamically
-  const temp = group
-    .append('text')
-    .attr('font-size', 13)
-    .attr('font-weight', 600)
-    .attr('font-family', '"Georgia", "Times New Roman", serif')
-    .text(title);
-  const width = (temp.node() as SVGTextElement).getBBox().width + 20;
-  temp.remove();
+      const siblings = d.parent?.children || [];
+      if (siblings.length > 1) {
+        const index = siblings.indexOf(d);
+        const offset = (index - (siblings.length - 1) / 2) * 15;
+        group.attr('transform', `translate(${offset}, -45)`);
+      }
 
-  // Prevent title boxes from overlapping siblings horizontally
-  // If two siblings are too close, shift text slightly left/right
-  const siblings = d.parent?.children || [];
-  if (siblings.length > 1) {
-    const index = siblings.indexOf(d);
-    const offset = (index - (siblings.length - 1) / 2) * 15; // spread text horizontally
-    group.attr('transform', `translate(${offset}, -45)`);
-  } else {
-    group.attr('transform', 'translate(0, -45)');
-  }
+      group
+        .append('rect')
+        .attr('x', -width / 2)
+        .attr('y', -15)
+        .attr('width', width)
+        .attr('height', 28)
+        .attr('rx', 8)
+        .attr('fill', 'white')
+        .attr('opacity', 0.9)
+        .attr('stroke', '#bbf7d0')
+        .attr('stroke-width', 1.5);
 
-  // background rect
-  group
-    .append('rect')
-    .attr('x', -width / 2)
-    .attr('y', -15)
-    .attr('width', width)
-    .attr('height', 28)
-    .attr('rx', 8)
-    .attr('fill', 'white')
-    .attr('opacity', 0.9)
-    .attr('stroke', '#bbf7d0')
-    .attr('stroke-width', 1.5);
+      group
+        .append('text')
+        .attr('text-anchor', 'middle')
+        .attr('font-size', 13)
+        .attr('font-weight', 600)
+        .attr('fill', '#166534')
+        .attr('font-family', '"Georgia", "Times New Roman", serif')
+        .attr('dy', 5)
+        .text(title);
+    });
 
-  // text label
-  group
-    .append('text')
-    .attr('text-anchor', 'middle')
-    .attr('font-size', 13)
-    .attr('font-weight', 600)
-    .attr('fill', '#166534')
-    .attr('font-family', '"Georgia", "Times New Roman", serif')
-    .attr('dy', 5)
-    .text(title);
-});
-
-
-    // Interactions
+    // Hover interactions
     nodes
       .on('mouseover', function () {
         d3.select(this).select('circle').transition().duration(150).attr('r', 30).attr('fill', '#86efac');
@@ -314,17 +326,14 @@ root.descendants().forEach((d: any) => {
           .duration(150)
           .attr('r', (d: any) => (d.depth === 0 ? 30 : 25))
           .attr('fill', d.children ? '#22c55e' : '#bbf7d0');
-      })
-      .on('click', (_, d: any) => setPopupNode(d.data));
+      });
 
-    // --- Nodes are fixed; disable dragging ---
     interact('.node').draggable(false);
-
   }, []);
 
   return (
     <main className="w-screen h-screen text-green-900 relative overflow-hidden bg-gradient-to-b from-green-50 to-white">
-      {/* Back */}
+      {/* Back Button */}
       <div className="absolute top-4 left-4 z-40">
         <Link
           href="/"
@@ -335,55 +344,63 @@ root.descendants().forEach((d: any) => {
         </Link>
       </div>
 
-      {/* Tree */}
+      {/* Tree Visualization */}
       <motion.div
-        animate={{ x: popupNode ? -150 : 0 }}
+        animate={{ x: popupNode ? -100 : 0 }}
         transition={{ duration: 0.4, ease: 'easeOut' }}
         className="absolute inset-0"
       >
         <svg ref={svgRef}></svg>
       </motion.div>
 
-      {/* Popup */}
+      {/* Sidebar Drawer */}
       <AnimatePresence>
         {popupNode && (
           <motion.div
-            key="popup-card"
-            initial={{ opacity: 0, x: 150 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 150 }}
+            key="sidebar"
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
             transition={{ duration: 0.4, ease: 'easeOut' }}
-            className="absolute top-1/2 right-[15%] -translate-y-1/2 w-[420px] bg-white border border-green-100 rounded-2xl shadow-2xl p-6 z-50"
+            className="fixed top-0 right-0 h-full w-[420px] bg-white border-l border-green-200 shadow-2xl z-50 flex flex-col"
           >
-            <div className="flex justify-between items-start mb-3">
+            <div className="flex justify-between items-center p-6 border-b border-green-100 bg-green-50">
               <h2 className="text-2xl font-semibold text-green-800">{popupNode.title}</h2>
               <button onClick={() => setPopupNode(null)}>
-                <X className="w-5 h-5 text-green-700 hover:text-green-900" />
+                <X className="w-6 h-6 text-green-700 hover:text-green-900" />
               </button>
             </div>
 
-            <p className="text-sm text-green-600 mb-2">
-              <strong>Authors:</strong> {popupNode.authors.join(', ')}
-            </p>
-
-            <div className="text-sm text-green-700 mb-4">
-              <strong>Abstract:</strong>
-              <div
-                className="bg-green-50 border border-green-100 rounded p-2 mt-1"
-                dangerouslySetInnerHTML={{
-                  __html: hljs.highlight(popupNode.summary, { language: 'plaintext' }).value,
-                }}
-              />
-            </div>
-
-            <div className="text-sm text-green-700">
-              <strong>Keywords / Similarities:</strong>
-              <ul className="list-disc ml-5 mt-1">
-                {popupNode.keywords.map((kw: string, i: number) => (
-                  <li key={i}>{kw}</li>
-                ))}
-              </ul>
-            </div>
+            {/* ✨ Animated content area */}
+            <motion.div
+              key={popupNode.id}
+              initial={{ opacity: 0, x: 20, scale: 0.98 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -20, scale: 0.98 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="p-6 overflow-y-auto flex-1"
+            >
+              <p className="text-sm text-green-600 mb-3">
+                <strong>Authors:</strong> {popupNode.authors.join(', ')}
+              </p>
+              <div className="text-sm text-green-700 mb-4">
+                <strong>Abstract:</strong>
+                <div
+                  className="bg-green-50 border border-green-100 rounded p-2 mt-1"
+                  dangerouslySetInnerHTML={{
+                    __html: hljs.highlight(popupNode.summary, { language: 'plaintext' }).value,
+                  }}
+                />
+              </div>
+              <div className="text-sm text-green-700">
+                <strong>Keywords / Similarities:</strong>
+                <ul className="list-disc ml-5 mt-1">
+                  {popupNode.keywords.map((kw: string, i: number) => (
+                    <li key={i}>{kw}</li>
+                  ))}
+                </ul>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
