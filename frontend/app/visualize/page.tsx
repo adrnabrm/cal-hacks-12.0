@@ -8,7 +8,7 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, X } from 'lucide-react';
 
-// 🌿 Mock dataset
+// Mock dataset
 const data = {
   id: 'seed',
   title: 'Seed Paper: Climate Change Impact',
@@ -33,6 +33,14 @@ const data = {
           summary:
             'Evaluates city-level CO₂ emissions, correlating transport activity and energy consumption with air quality shifts.',
         },
+        {
+          id: 'a2',
+          title: 'Study A2: Global Emission Policies',
+          authors: ['K. Lee', 'S. Ahmed'],
+          keywords: ['emission policy', 'global metrics', 'data modeling'],
+          summary:
+            'Analyzes global emission policy effectiveness using data-driven modeling and regional comparison.',
+        },
       ],
     },
     {
@@ -45,19 +53,19 @@ const data = {
     },
     {
       id: 'c',
-      title: 'Paper B: Renewable Energy Growth',
-      authors: ['Dr. Clara Sun', 'R. Osei'],
-      keywords: ['renewable energy', 'solar power', 'hydroelectric'],
+      title: 'Paper C: Ocean Carbon Cycle Studies',
+      authors: ['Dr. Li Fang', 'A. Santos'],
+      keywords: ['carbon cycle', 'oceanography', 'climate modeling'],
       summary:
-        'Investigates renewable adoption globally, tracking solar, wind, and hydro growth from 2010–2025, highlighting economic transitions.',
+        'Explores how the ocean acts as a major carbon sink and its response to global temperature changes.',
     },
     {
-      id: 'b',
-      title: 'Paper B: Renewable Energy Growth',
-      authors: ['Dr. Clara Sun', 'R. Osei'],
-      keywords: ['renewable energy', 'solar power', 'hydroelectric'],
+      id: 'd',
+      title: 'Paper D: Atmospheric Methane Analysis',
+      authors: ['Dr. R. Singh', 'C. Garcia'],
+      keywords: ['methane', 'atmosphere', 'greenhouse gases'],
       summary:
-        'Investigates renewable adoption globally, tracking solar, wind, and hydro growth from 2010–2025, highlighting economic transitions.',
+        'Examines methane’s role in global warming, focusing on atmospheric measurement methods and mitigation approaches.',
     },
   ],
 };
@@ -78,13 +86,12 @@ export default function VisualizePage() {
       .attr('height', height)
       .style('cursor', 'grab')
       .style('background', 'linear-gradient(to top, #ecfdf5, #f0fdf4)');
-
     svg.selectAll('*').remove();
 
     const g = svg.append('g').attr('class', 'zoom-group');
     const treeGroup = g.append('g').attr('class', 'tree-group');
 
-    // 🌍 zoom + pan setup
+    // Zoom + pan
     const zoom = d3
       .zoom()
       .scaleExtent([0.6, 2])
@@ -95,16 +102,25 @@ export default function VisualizePage() {
       .on('zoom', (e) => g.attr('transform', e.transform));
     svg.call(zoom);
 
-    // 🌳 D3 tree layout
+    // --- Tree layout
     const root = d3.hierarchy(data);
-    const treeLayout = d3.tree().size([width - 400, height - 300]);
-    treeLayout(root);
+    // more vertical room so depths are clearly separated
+    // Tree layout with more vertical room between siblings
+const treeLayout = d3.tree().nodeSize([240, 220]);
+treeLayout(root);
+
+// Apply small random Y-offsets to leaf nodes for a natural look
+root.descendants().forEach((d: any) => {
+  if (!d.children) {
+    d.y += Math.random() * 40 - 20; // ±20px asymmetry
+  }
+});
+
 
     const seedY = height - 100;
-    const yScale = d3.scaleLinear().domain([0, height]).range([seedY - 80, 50]);
-    const seedX = root.x + 200;
+    const seedX = width / 2;
 
-    // 🌿 Ground and stem animation
+    // --- Ground
     const defs = svg.append('defs');
     const gradient = defs
       .append('linearGradient')
@@ -129,40 +145,30 @@ export default function VisualizePage() {
         [seedX + hillWidth / 2, seedY],
       ]);
 
-    // Draw soil
-    const soil = ground
+    ground
       .append('path')
       .attr(
         'd',
-        `${hillPath} 
+        `${hillPath}
          L ${seedX + hillWidth / 2}, ${seedY + hillDepth}
          Q ${seedX}, ${seedY + hillDepth + 40}, ${seedX - hillWidth / 2}, ${seedY + hillDepth}
          Z`
       )
       .attr('fill', 'url(#soil-gradient)')
-      .attr('opacity', 0);
-
-    soil
+      .attr('opacity', 0)
       .transition()
-      .delay(200)
       .duration(1000)
       .attr('opacity', 1);
 
-    // Ground outline
     ground
       .append('path')
       .attr('d', hillPath)
       .attr('fill', 'none')
       .attr('stroke', '#78350f')
       .attr('stroke-width', 6)
-      .attr('stroke-linecap', 'round')
-      .attr('opacity', 0)
-      .transition()
-      .delay(400)
-      .duration(800)
-      .attr('opacity', 1);
+      .attr('stroke-linecap', 'round');
 
-    // Stem growth
+    // Stem
     const stem = ground
       .append('line')
       .attr('x1', seedX)
@@ -173,64 +179,64 @@ export default function VisualizePage() {
       .attr('stroke-width', 4)
       .attr('stroke-linecap', 'round');
 
-    stem
-      .transition()
-      .delay(800)
-      .duration(1000)
-      .attr('y2', seedY - 60);
+    stem.transition().delay(800).duration(1000).attr('y2', seedY - 60);
 
-    // 🌿 Sprouting tree animation
+    // --- Links & Nodes containers
     const linkGroup = treeGroup.append('g').attr('class', 'links');
     const nodeGroup = treeGroup.append('g').attr('class', 'nodes');
 
-    // Create links with animation
-    const linkPath = d3
-  .linkVertical()
-  .x((d: any) => (d?.x ?? 0) + 200)
-  .y((d: any) => (d?.y ?? seedY - 60));
+    // Bézier link generator (coordinates consistent with node transforms)
+    const bezierLink = (d: any) => {
+      const radius = 25;
+      const sx = d.source.x + seedX;
+      const sy = seedY - d.source.y + (d.source.depth === 0 ? radius : 0);
+      const tx = d.target.x + seedX;
+      const ty = seedY - d.target.y - radius;
+      const midY = (sy + ty) / 2;
+      const siblingOffset = (d.target.x - d.source.x) * 0.3; // nicer spread for many children
+      return `M${sx},${sy} C${sx + siblingOffset},${midY} ${tx - siblingOffset},${midY} ${tx},${ty}`;
+    };
 
+    // Create links at their final shape first, then animate with true length
     const links = linkGroup
-  .selectAll('path.link')
-  .data(root.links())
-  .enter()
-  .append('path')
-  .attr('fill', 'none')
-  .attr('stroke', '#16a34a')
-  .attr('stroke-width', 2)
-  .attr('stroke-dasharray', '300 300')
-  .attr('stroke-dashoffset', 300)
-  // Start with links collapsed near the seed
-  .attr('d', (d: any) =>
-    linkPath({
-      source: { x: d?.source?.x ?? 0, y: seedY - 60 },
-      target: { x: d?.source?.x ?? 0, y: seedY - 60 },
-    })
-  );
-
-
-    links
+      .selectAll('path.link')
+      .data(root.links(), (l: any) => `${l.source.data.id}->${l.target.data.id}`)
+      .enter()
+      .append('path')
+      .attr('class', 'link')
+      .attr('fill', 'none')
+      .attr('stroke', '#16a34a')
+      .attr('stroke-width', 2)
+      .attr('d', (d: any) => bezierLink(d))
+      .attr('opacity', 1)
+      .each(function () {
+        // compute per-path length -> correct, non-chopped animation
+        const len = (this as SVGPathElement).getTotalLength();
+        d3.select(this)
+          .attr('stroke-dasharray', `${len} ${len}`)
+          .attr('stroke-dashoffset', len);
+      })
       .transition()
-      .delay((_, i) => 1000 + i * 200)
-      .duration(1200)
-      .attr('stroke-dashoffset', 0)
-      .attr('d', d3.linkVertical().x((d: any) => d.x + 200).y((d: any) => yScale(d.y)));
+      .delay((_, i) => 900 + i * 150)
+      .duration(900)
+      .attr('stroke-dashoffset', 0);
 
-    // Create nodes with bloom effect
+    // Nodes
     const nodes = nodeGroup
       .selectAll('g.node')
-      .data(root.descendants())
+      .data(root.descendants(), (d: any) => d.data.id)
       .enter()
       .append('g')
       .attr('class', 'node')
-      .attr('transform', (d) => `translate(${d.x + 200}, ${seedY - 60})`)
+      .attr('transform', (d) => `translate(${d.x + seedX}, ${seedY - 60})`)
       .style('opacity', 0);
 
     nodes
       .transition()
-      .delay((_, i) => 1500 + i * 300)
-      .duration(1000)
+      .delay((_, i) => 1100 + i * 200)
+      .duration(600)
       .style('opacity', 1)
-      .attr('transform', (d) => `translate(${d.x + 200}, ${yScale(d.y)})`);
+      .attr('transform', (d) => `translate(${d.x + seedX}, ${seedY - d.y})`);
 
     nodes
       .append('circle')
@@ -239,58 +245,64 @@ export default function VisualizePage() {
       .attr('stroke', '#166534')
       .attr('stroke-width', 2)
       .transition()
-      .delay((_, i) => 1500 + i * 300)
-      .duration(1000)
+      .delay((_, i) => 1200 + i * 200)
+      .duration(500)
       .attr('r', (d: any) => (d.depth === 0 ? 30 : 25));
 
-    // --- Titles (Auto-resize dynamic boxes) ---
+    // Title boxes above nodes
     const labelGroups = nodes.append('g').attr('class', 'label-group').attr('transform', 'translate(0, -45)');
-
     labelGroups.each(function (d: any) {
-      const group = d3.select(this);
-      const title = d.data.title;
+  const group = d3.select(this);
+  const title = d.data.title;
 
-      // measure text width dynamically
-      const tempText = group
-        .append('text')
-        .attr('font-size', 13)
-        .attr('font-weight', 600)
-        .attr('font-family', '"Georgia", "Times New Roman", serif')
-        .text(title);
+  // measure text width dynamically
+  const temp = group
+    .append('text')
+    .attr('font-size', 13)
+    .attr('font-weight', 600)
+    .attr('font-family', '"Georgia", "Times New Roman", serif')
+    .text(title);
+  const width = (temp.node() as SVGTextElement).getBBox().width + 20;
+  temp.remove();
 
-      const textWidth = (tempText.node() as SVGTextElement).getBBox().width;
-      tempText.remove();
+  // Prevent title boxes from overlapping siblings horizontally
+  // If two siblings are too close, shift text slightly left/right
+  const siblings = d.parent?.children || [];
+  if (siblings.length > 1) {
+    const index = siblings.indexOf(d);
+    const offset = (index - (siblings.length - 1) / 2) * 15; // spread text horizontally
+    group.attr('transform', `translate(${offset}, -45)`);
+  } else {
+    group.attr('transform', 'translate(0, -45)');
+  }
 
-      const padding = 10;
-      const boxWidth = Math.min(textWidth + padding * 2, 220);
-      const boxHeight = 28;
+  // background rect
+  group
+    .append('rect')
+    .attr('x', -width / 2)
+    .attr('y', -15)
+    .attr('width', width)
+    .attr('height', 28)
+    .attr('rx', 8)
+    .attr('fill', 'white')
+    .attr('opacity', 0.9)
+    .attr('stroke', '#bbf7d0')
+    .attr('stroke-width', 1.5);
 
-      // background rectangle
-      group
-        .append('rect')
-        .attr('x', -boxWidth / 2)
-        .attr('y', -boxHeight / 2)
-        .attr('width', boxWidth)
-        .attr('height', boxHeight)
-        .attr('rx', 8)
-        .attr('fill', 'white')
-        .attr('opacity', 0.9)
-        .attr('stroke', '#bbf7d0')
-        .attr('stroke-width', 1.5);
+  // text label
+  group
+    .append('text')
+    .attr('text-anchor', 'middle')
+    .attr('font-size', 13)
+    .attr('font-weight', 600)
+    .attr('fill', '#166534')
+    .attr('font-family', '"Georgia", "Times New Roman", serif')
+    .attr('dy', 5)
+    .text(title);
+});
 
-      // text label
-      group
-        .append('text')
-        .attr('text-anchor', 'middle')
-        .attr('font-size', 13)
-        .attr('font-weight', 600)
-        .attr('fill', '#166534')
-        .attr('font-family', '"Georgia", "Times New Roman", serif')
-        .attr('dy', 4)
-        .text(title.length > 35 ? title.slice(0, 32) + '...' : title);
-    });
 
-    // --- Interactions ---
+    // Interactions
     nodes
       .on('mouseover', function () {
         d3.select(this).select('circle').transition().duration(150).attr('r', 30).attr('fill', '#86efac');
@@ -305,24 +317,14 @@ export default function VisualizePage() {
       })
       .on('click', (_, d: any) => setPopupNode(d.data));
 
-    interact('.node').draggable({
-      listeners: {
-        move(event) {
-          const target = event.target;
-          const transform = d3.select(target).attr('transform');
-          const match = /translate\(([^,]+),([^\)]+)\)/.exec(transform);
-          if (!match) return;
-          const x = parseFloat(match[1]) + event.dx;
-          const y = parseFloat(match[2]) + event.dy;
-          d3.select(target).attr('transform', `translate(${x},${y})`);
-        },
-      },
-    });
+    // --- Nodes are fixed; disable dragging ---
+    interact('.node').draggable(false);
+
   }, []);
 
   return (
     <main className="w-screen h-screen text-green-900 relative overflow-hidden bg-gradient-to-b from-green-50 to-white">
-      {/* Back button */}
+      {/* Back */}
       <div className="absolute top-4 left-4 z-40">
         <Link
           href="/"
@@ -342,7 +344,7 @@ export default function VisualizePage() {
         <svg ref={svgRef}></svg>
       </motion.div>
 
-      {/* Popup Info Card */}
+      {/* Popup */}
       <AnimatePresence>
         {popupNode && (
           <motion.div
