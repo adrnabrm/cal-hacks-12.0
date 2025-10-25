@@ -290,9 +290,15 @@ export default function VisualizePage() {
   };
 
   // --- Lifecycle ---
+  // --- Lifecycle ---
   useEffect(() => {
-    drawTree(trees[activeTab]);
-  }, [activeTab, trees]);
+    // Close any open sidebar when switching trees
+    setPopupNode(null);
+
+  // Draw the new tree
+  drawTree(trees[activeTab]);
+}, [activeTab, trees]);
+
 
   // --- Tab management ---
   const handleAddTree = () => {
