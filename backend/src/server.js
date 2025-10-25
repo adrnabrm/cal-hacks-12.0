@@ -1,7 +1,6 @@
 // src/server.js
 import express from "express";
 import { runWorkflow } from "./main_workflow.js";
-import { db } from "./firebase.js";
 
 const app = express();
 const port = process.env.PORT || 8000;
