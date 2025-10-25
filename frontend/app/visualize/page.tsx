@@ -6,78 +6,70 @@ import hljs from 'highlight.js';
 import 'highlight.js/styles/github.css';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, X } from 'lucide-react';
+import { ArrowLeft, X, Plus, Trash2, Pencil, Check } from 'lucide-react';
 
-// --- Sample data ---
-const data = {
-  id: 'seed',
+// --- Full Example Tree ---
+const exampleTree = {
+  id: 'seed1',
   title: 'Seed Paper: Climate Change Impact',
   authors: ['Dr. Jane Doe', 'Prof. Alan White'],
   keywords: ['climate change', 'temperature rise', 'carbon emissions'],
   summary:
-    'This foundational study explores global patterns of temperature rise and its correlation with emission trends across continents.',
+    'Explores global patterns of temperature rise and its correlation with emission trends across continents.',
   children: [
     {
       id: 'a',
       title: 'Paper A: Carbon Emission Trends',
-      authors: ['Dr. Sam Green', 'Dr. Naomi Clarke'],
-      keywords: ['carbon trends', 'urban data', 'industrial emissions'],
-      summary:
-        'Analyzes carbon emissions from 2000–2020, highlighting industrial and urban CO₂ output patterns, and policy effectiveness.',
+      authors: ['Sam Green'],
+      keywords: ['carbon'],
+      summary: 'Emission trend analysis.',
       children: [
-        {
-          id: 'a1',
-          title: 'Study A1: Urban Emission Analysis',
-          authors: ['L. Wong', 'M. Patel'],
-          keywords: ['urban emission', 'megacities', 'transport'],
-          summary:
-            'Evaluates city-level CO₂ emissions, correlating transport activity and energy consumption with air quality shifts.',
-        },
-        {
-          id: 'a2',
-          title: 'Study A2: Global Emission Policies',
-          authors: ['K. Lee', 'S. Ahmed'],
-          keywords: ['emission policy', 'global metrics', 'data modeling'],
-          summary:
-            'Analyzes global emission policy effectiveness using data-driven modeling and regional comparison.',
-        },
+        { id: 'a1', title: 'Paper C: Renewable Models', authors: ['Clara Sun'], keywords: ['modeling'], summary: 'Simulation improvements.' },
+        { id: 'a2', title: 'Paper D: Global Policies', authors: ['Mark Liu'], keywords: ['policy'], summary: 'Policy framework evaluations.' },
+        { id: 'a3', title: 'Paper E: Urban Studies', authors: ['Anna Reyes'], keywords: ['urban'], summary: 'City emission analysis.' },
+        { id: 'a4', title: 'Paper F: Climate Metrics', authors: ['Leo Tan'], keywords: ['metrics'], summary: 'Environmental measurement techniques.' },
+        { id: 'a5', title: 'Paper G: Carbon Capture', authors: ['Kai Zhang'], keywords: ['capture'], summary: 'Carbon capture innovations.' },
       ],
     },
     {
       id: 'b',
-      title: 'Paper B: Renewable Energy Growth',
-      authors: ['Dr. Clara Sun', 'R. Osei'],
-      keywords: ['renewable energy', 'solar power', 'hydroelectric'],
-      summary:
-        'Investigates renewable adoption globally, tracking solar, wind, and hydro growth from 2010–2025, highlighting economic transitions.',
-    },
-    {
-      id: 'c',
-      title: 'Paper C: Ocean Carbon Cycle Studies',
-      authors: ['Dr. Li Fang', 'A. Santos'],
-      keywords: ['carbon cycle', 'oceanography', 'climate modeling'],
-      summary:
-        'Explores how the ocean acts as a major carbon sink and its response to global temperature changes.',
-    },
-    {
-      id: 'd',
-      title: 'Paper D: Atmospheric Methane Analysis',
-      authors: ['Dr. R. Singh', 'C. Garcia'],
-      keywords: ['methane', 'atmosphere', 'greenhouse gases'],
-      summary:
-        'Examines methane’s role in global warming, focusing on atmospheric measurement methods and mitigation approaches.',
+      title: 'Paper B: Climate Modeling Innovations',
+      authors: ['Clara Sun'],
+      keywords: ['modeling'],
+      summary: 'Simulation improvements.',
+      children: [
+        {
+          id: 'b1',
+          title: 'Paper C: Ocean Temperature Data',
+          authors: ['L. Chen'],
+          keywords: ['data', 'temperature'],
+          summary: 'Analyzing temperature datasets.',
+        },
+      ],
     },
   ],
 };
 
 export default function VisualizePage() {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const [trees, setTrees] = useState<Record<string, any>>({
+    new_tree: null,
+    example_tree: exampleTree,
+  });
+  const [tabNames, setTabNames] = useState<Record<string, string>>({
+    new_tree: 'New Tree',
+    example_tree: 'Example Tree',
+  });
+  const [activeTab, setActiveTab] = useState('new_tree');
   const [popupNode, setPopupNode] = useState<any | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [inputValue, setInputValue] = useState('');
+  const [editingTab, setEditingTab] = useState<string | null>(null);
+  const [newTabName, setNewTabName] = useState('');
 
-  useEffect(() => {
+  // --- Draw tree visualization ---
+  const drawTree = (data: any) => {
     if (!svgRef.current) return;
-
     const width = window.innerWidth;
     const height = window.innerHeight;
 
@@ -92,45 +84,20 @@ export default function VisualizePage() {
     const g = svg.append('g').attr('class', 'zoom-group');
     const treeGroup = g.append('g').attr('class', 'tree-group');
 
-    // Zoom + pan
+    // --- Zoom + pan ---
     const zoom = d3
       .zoom()
-      .scaleExtent([0.3, 5]) // more flexible zoom
+      .scaleExtent([0.3, 5])
       .translateExtent([
-        [-width * 2, -height * 2],   // far larger pan bounds
+        [-width * 2, -height * 2],
         [width * 3, height * 3],
       ])
-      .filter((event) => {
-        // disable zoom on right-click or shift-click
-        return !event.button && !event.shiftKey;
-      })
-      .on('zoom', (event) => {
-        g.attr('transform', event.transform);
-      });
+      .filter((event) => !event.button && !event.shiftKey)
+      .on('zoom', (event) => g.attr('transform', event.transform));
 
-    // Apply zoom behavior
     svg.call(zoom);
-
-    // Start centered on the seed (original behavior)
-    svg.call(
-      zoom.transform,
-      d3.zoomIdentity
-        .translate(0, 0) // no forced offset
-        .scale(1)        // original zoom level
-    );
-
-    // Visual feedback for dragging
-    svg
-      .on('mousedown', () => svg.style('cursor', 'grabbing'))
-      .on('mouseup', () => svg.style('cursor', 'grab'));
-
-    // Tree layout
-    const root = d3.hierarchy(data);
-    const treeLayout = d3.tree().nodeSize([240, 220]);
-    treeLayout(root);
-    root.descendants().forEach((d: any) => {
-      if (!d.children) d.y += Math.random() * 40 - 20;
-    });
+    svg.call(zoom.transform, d3.zoomIdentity.scale(1));
+    svg.on('mousedown', () => svg.style('cursor', 'grabbing')).on('mouseup', () => svg.style('cursor', 'grab'));
 
     const seedY = height - 100;
     const seedX = width / 2;
@@ -162,13 +129,7 @@ export default function VisualizePage() {
 
     ground
       .append('path')
-      .attr(
-        'd',
-        `${hillPath}
-         L ${seedX + hillWidth / 2}, ${seedY + hillDepth}
-         Q ${seedX}, ${seedY + hillDepth + 40}, ${seedX - hillWidth / 2}, ${seedY + hillDepth}
-         Z`
-      )
+      .attr('d', `${hillPath} L ${seedX + hillWidth / 2}, ${seedY + hillDepth} Q ${seedX}, ${seedY + hillDepth + 40}, ${seedX - hillWidth / 2}, ${seedY + hillDepth} Z`)
       .attr('fill', 'url(#soil-gradient)')
       .attr('opacity', 0)
       .transition()
@@ -194,7 +155,17 @@ export default function VisualizePage() {
       .attr('stroke-linecap', 'round');
     stem.transition().delay(800).duration(1000).attr('y2', seedY - 60);
 
-    // --- Links and Nodes ---
+    // Stop here if tree is blank
+    if (!data) return;
+
+    // --- Tree structure ---
+    const root = d3.hierarchy(data);
+    const treeLayout = d3.tree().nodeSize([240, 220]);
+    treeLayout(root);
+    root.descendants().forEach((d: any) => {
+      if (!d.children) d.y += Math.random() * 40 - 20;
+    });
+
     const linkGroup = treeGroup.append('g').attr('class', 'links');
     const nodeGroup = treeGroup.append('g').attr('class', 'nodes');
 
@@ -209,6 +180,7 @@ export default function VisualizePage() {
       return `M${sx},${sy} C${sx + siblingOffset},${midY} ${tx - siblingOffset},${midY} ${tx},${ty}`;
     };
 
+    // Links
     linkGroup
       .selectAll('path.link')
       .data(root.links())
@@ -222,16 +194,17 @@ export default function VisualizePage() {
         const len = (this as SVGPathElement).getTotalLength();
         d3.select(this)
           .attr('stroke-dasharray', `${len} ${len}`)
-          .attr('stroke-dashoffset', len);
-      })
-      .transition()
-      .delay((_, i) => 900 + i * 150)
-      .duration(900)
-      .attr('stroke-dashoffset', 0);
+          .attr('stroke-dashoffset', len)
+          .transition()
+          .delay((_, i) => 900 + i * 150)
+          .duration(900)
+          .attr('stroke-dashoffset', 0);
+      });
 
+    // Nodes
     const nodes = nodeGroup
       .selectAll('g.node')
-      .data(root.descendants(), (d: any) => d.data.id)
+      .data(root.descendants())
       .enter()
       .append('g')
       .attr('class', 'node')
@@ -241,8 +214,6 @@ export default function VisualizePage() {
       .on('click', function (_, d: any) {
         setPopupNode(d.data);
         setSelectedNodeId(d.data.id);
-
-        // Subtle pulse animation
         const circle = d3.select(this).select('circle');
         circle
           .transition()
@@ -271,6 +242,7 @@ export default function VisualizePage() {
       .duration(500)
       .attr('r', (d: any) => (d.depth === 0 ? 30 : 25));
 
+    // Labels
     const labelGroups = nodes.append('g').attr('class', 'label-group').attr('transform', 'translate(0, -45)');
     labelGroups.each(function (d: any) {
       const group = d3.select(this);
@@ -314,26 +286,67 @@ export default function VisualizePage() {
         .text(title);
     });
 
-    // Hover interactions
-    nodes
-      .on('mouseover', function () {
-        d3.select(this).select('circle').transition().duration(150).attr('r', 30).attr('fill', '#86efac');
-      })
-      .on('mouseout', function (e, d: any) {
-        d3.select(this)
-          .select('circle')
-          .transition()
-          .duration(150)
-          .attr('r', (d: any) => (d.depth === 0 ? 30 : 25))
-          .attr('fill', d.children ? '#22c55e' : '#bbf7d0');
-      });
-
     interact('.node').draggable(false);
-  }, []);
+  };
+
+  // --- Lifecycle ---
+  useEffect(() => {
+    drawTree(trees[activeTab]);
+  }, [activeTab, trees]);
+
+  // --- Tab management ---
+  const handleAddTree = () => {
+    if (Object.keys(trees).length >= 5) {
+      alert('You can only have up to 5 trees.');
+      return;
+    }
+    const newId = `tree_${Date.now()}`;
+    setTrees((prev) => ({ ...prev, [newId]: null }));
+    setTabNames((prev) => ({ ...prev, [newId]: `Tree ${Object.keys(prev).length + 1}` }));
+    setActiveTab(newId);
+  };
+
+  const handleDeleteTree = (id: string) => {
+    if (!confirm(`Delete "${tabNames[id]}"? This cannot be undone.`)) return;
+    const updatedTrees = { ...trees };
+    const updatedNames = { ...tabNames };
+    delete updatedTrees[id];
+    delete updatedNames[id];
+    setTrees(updatedTrees);
+    setTabNames(updatedNames);
+    const nextTab = Object.keys(updatedTrees)[0] || '';
+    setActiveTab(nextTab);
+  };
+
+  const startRenaming = (id: string) => {
+    setEditingTab(id);
+    setNewTabName(tabNames[id]);
+  };
+
+  const confirmRename = (id: string) => {
+    setTabNames((prev) => ({ ...prev, [id]: newTabName || prev[id] }));
+    setEditingTab(null);
+  };
+
+  // --- Paper input placeholder ---
+  const handleSubmitPaper = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputValue.trim()) return;
+    const newTree = {
+      id: 'seed',
+      title: `Seed Paper: ${inputValue}`,
+      authors: ['Placeholder Author'],
+      keywords: ['placeholder'],
+      summary: 'Placeholder summary — backend will fill in real data later.',
+      children: [],
+    };
+    setTrees((prev) => ({ ...prev, [activeTab]: newTree }));
+    setInputValue('');
+  };
 
   return (
     <main className="w-screen h-screen text-green-900 relative overflow-hidden bg-gradient-to-b from-green-50 to-white">
-      {/* Back Button */}
+      {/* Back */}
       <div className="absolute top-4 left-4 z-40">
         <Link
           href="/"
@@ -344,16 +357,81 @@ export default function VisualizePage() {
         </Link>
       </div>
 
-      {/* Tree Visualization */}
-      <motion.div
-        animate={{ x: popupNode ? -100 : 0 }}
-        transition={{ duration: 0.4, ease: 'easeOut' }}
-        className="absolute inset-0"
-      >
-        <svg ref={svgRef}></svg>
-      </motion.div>
+      {/* Tabs */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 flex gap-2 z-40 flex-wrap justify-center">
+        {Object.entries(trees).map(([key]) => (
+          <div key={key} className="flex items-center gap-1 bg-white rounded-full shadow px-2 py-1">
+            {editingTab === key ? (
+              <>
+                <input
+                  type="text"
+                  value={newTabName}
+                  onChange={(e) => setNewTabName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && confirmRename(key)}
+                  className="border border-green-300 rounded-full px-2 text-sm w-28 focus:outline-none focus:ring-1 focus:ring-green-500"
+                  autoFocus
+                />
+                <button onClick={() => confirmRename(key)}>
+                  <Check className="w-4 h-4 text-green-600" />
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => setActiveTab(key)}
+                  className={`px-3 py-1 rounded-full font-semibold transition-all ${
+                    activeTab === key ? 'bg-green-600 text-white' : 'bg-green-100 hover:bg-green-200 text-green-700'
+                  }`}
+                >
+                  {tabNames[key] || 'Untitled Tree'}
+                </button>
+                <button onClick={() => startRenaming(key)} title="Rename">
+                  <Pencil className="w-4 h-4 text-green-600 hover:text-green-800" />
+                </button>
+                <button onClick={() => handleDeleteTree(key)} title="Delete">
+                  <Trash2 className="w-4 h-4 text-red-600 hover:text-red-800" />
+                </button>
+              </>
+            )}
+          </div>
+        ))}
 
-      {/* Sidebar Drawer */}
+        <button
+          onClick={handleAddTree}
+          className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-full shadow-md transition-all"
+        >
+          <Plus className="w-4 h-4" />
+          Add Tree
+        </button>
+      </div>
+
+      <svg ref={svgRef} className="absolute inset-0 block" />
+
+      {/* Placeholder */}
+      {!trees[activeTab] && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center z-30">
+          <p className="text-lg text-green-800 mb-3">
+            🌱 This tree is empty. Add your first research paper below.
+          </p>
+          <form onSubmit={handleSubmitPaper} className="flex gap-2">
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="Enter paper title..."
+              className="border border-green-300 rounded-lg px-3 py-2 w-80 focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+            <button
+              type="submit"
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-all"
+            >
+              Add Paper
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Sidebar */}
       <AnimatePresence>
         {popupNode && (
           <motion.div
@@ -371,7 +449,6 @@ export default function VisualizePage() {
               </button>
             </div>
 
-            {/* ✨ Animated content area */}
             <motion.div
               key={popupNode.id}
               initial={{ opacity: 0, x: 20, scale: 0.98 }}
