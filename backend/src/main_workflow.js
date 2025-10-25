@@ -1,13 +1,13 @@
 /**
- * Main Workflow: MCP-Powered Research Agent
- * Uses Bright Data MCP tools + LangChain to research and synthesize results
- * Updated for Gemini instead of Anthropic
+ * Modified Workflow: MCP-Powered Research Agent with JSON Storage
+ * Searches web, extracts content, and stores summaries in JSON format
  */
 
 import 'dotenv/config';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { MultiServerMCPClient } from '@langchain/mcp-adapters';
 import { fileURLToPath } from 'url';
+import fs from 'fs/promises';
 
 // Configuration constants
 const CONFIG = {
@@ -18,19 +18,15 @@ const CONFIG = {
 
 // Content processing constants
 const CONTENT_LIMITS = {
-  SCRAPE_PREVIEW: 3000,  // Characters to include per scraped page in synthesis
-  MAX_RESULTS: 3,       // Default maximum URLs to analyze
+  SCRAPE_PREVIEW: 3000,  // Characters to include per scraped page
+  MAX_RESULTS: 5,        // Default maximum URLs to analyze
   MAX_DOMAINS_PER_SOURCE: 2, // Maximum pages per domain for diversity
 };
-
-// Stopwords for heuristic keyword extraction
-const STOPWORDS = new Set([
-  'the','and','a','to','of','in','for','on','with','at','by','from','as','that','this','it','is','are','was','were','be','or','an','if','than','then','so','but','we','you','your','they','their','our','us','not','can','will','may','more','most','about','into','over','also','new','latest'
-]);
 
 function validateConfig() {
   const missing = [];
   if (!CONFIG.apiKey) missing.push('BRIGHTDATA_API_KEY');
+  if (!CONFIG.googleKey) missing.push('GOOGLE_API_KEY');
   if (missing.length > 0) throw new Error(`Missing: ${missing.join(', ')}. Check your .env file.`);
 }
 
@@ -45,7 +41,6 @@ function validateInput(query, maxResults) {
 
 /**
  * Selects diverse URLs from search results
- * Strategy: Limit pages per domain to ensure variety of sources
  */
 function selectDiverseUrls(searchData, maxResults) {
   const urls = [];
@@ -57,9 +52,13 @@ function selectDiverseUrls(searchData, maxResults) {
         try {
           const domain = new URL(result.link).hostname.replace('www.', '');
 
-          // Limit pages per domain for diversity
           if ((perDomain[domain] || 0) < CONTENT_LIMITS.MAX_DOMAINS_PER_SOURCE) {
-            urls.push(result.link);
+            urls.push({
+              url: result.link,
+              title: result.title || 'Untitled',
+              snippet: result.description || '',
+              domain
+            });
             perDomain[domain] = (perDomain[domain] || 0) + 1;
           }
         } catch {
@@ -72,22 +71,46 @@ function selectDiverseUrls(searchData, maxResults) {
   return { urls, domainCount: Object.keys(perDomain).length };
 }
 
+/**
+ * Generate summary for a single source using Gemini
+ */
+async function generateSummary(llm, content, sourceTitle, query) {
+  try {
+    const response = await llm.invoke([
+      {
+        role: 'system',
+        content: 'You are a research assistant. Create a concise 2-3 paragraph summary of the provided content, focusing on information relevant to the research query. Highlight key findings and important details.',
+      },
+      {
+        role: 'user',
+        content: `Research Query: ${query}\n\nSource Title: ${sourceTitle}\n\nContent:\n${content}\n\nProvide a comprehensive summary:`,
+      },
+    ]);
+    return response.content;
+  } catch (error) {
+    console.error(`Summary generation failed: ${error.message}`);
+    return 'Summary generation failed';
+  }
+}
+
+/**
+ * Main research workflow
+ */
 async function runWorkflow(query, options = {}) {
-  const { maxResults = CONTENT_LIMITS.MAX_RESULTS } = options;
+  const { maxResults = CONTENT_LIMITS.MAX_RESULTS, outputFile = 'research_results.json' } = options;
 
   validateInput(query, maxResults);
+  validateConfig();
 
   console.log(`\n${'='.repeat(60)}`);
-  console.log('STEP 1: Initializing MCP Client');
+  console.log('RESEARCH AGENT - Starting Workflow');
   console.log('='.repeat(60));
-  console.log(`Query: "${query}"`);
-  console.log(`Max results to analyze: ${maxResults}`);
+  console.log(`Research Topic: "${query}"`);
+  console.log(`Max sources to analyze: ${maxResults}`);
+  console.log(`Output file: ${outputFile}\n`);
 
-  if (!CONFIG.googleKey) {
-    console.log('\nNote: GOOGLE_API_KEY not set - using heuristic summarization');
-    console.log('Add GOOGLE_API_KEY to .env for LLM-powered synthesis\n');
-  }
-
+  // Initialize MCP Client
+  console.log('Step 1: Initializing MCP Client...');
   const client = new MultiServerMCPClient({
     bright_data: {
       url: `https://mcp.brightdata.com/sse?token=${CONFIG.apiKey}&pro=1`,
@@ -95,157 +118,171 @@ async function runWorkflow(query, options = {}) {
     },
   });
 
-  console.log(`\n${'='.repeat(60)}`);
-  console.log('STEP 2: Loading Bright Data Tools');
-  console.log('='.repeat(60));
+  // Load tools
+  console.log('Step 2: Loading Bright Data Tools...');
   const allTools = await client.getTools();
   const searchTool = allTools.find(t => t.name === 'search_engine');
   const scrapeTool = allTools.find(t => t.name === 'scrape_as_markdown');
 
   if (!searchTool || !scrapeTool) {
-    throw new Error('Required tools not found: search_engine and scrape_as_markdown');
+    throw new Error('Required tools not found');
   }
-  console.log('Loaded tools: search_engine, scrape_as_markdown');
+  console.log('✓ Tools loaded: search_engine, scrape_as_markdown\n');
 
-  console.log(`\n${'='.repeat(60)}`);
-  console.log('STEP 3: Searching for Results');
-  console.log('='.repeat(60));
+  // Initialize Gemini LLM
+  console.log('Step 3: Initializing Gemini LLM...');
+  const llm = new ChatGoogleGenerativeAI({
+    apiKey: CONFIG.googleKey,
+    model: CONFIG.googleModel,
+    temperature: 0.3,
+  });
+  console.log(`✓ Using model: ${CONFIG.googleModel}\n`);
+
+  // Search the web
+  console.log('Step 4: Searching the web...');
   const searchResult = await searchTool.invoke({ query, engine: 'google' });
-
-  console.log(`\n${'='.repeat(60)}`);
-  console.log('STEP 4: Selecting URLs with Domain Diversity');
-  console.log('='.repeat(60));
-  const llm = CONFIG.googleKey
-    ? new ChatGoogleGenerativeAI({
-        apiKey: CONFIG.googleKey,
-        model: CONFIG.googleModel,
-        temperature: 0,
-      })
-    : null;
-
-  let urls = [];
-  let domainCount = 0;
-
-  try {
-    const searchData = typeof searchResult === 'string' ? JSON.parse(searchResult) : searchResult;
-    const selection = selectDiverseUrls(searchData, maxResults);
-    urls = selection.urls;
-    domainCount = selection.domainCount;
-
-    console.log(`Selected ${urls.length} URLs from ${domainCount} domains`);
-  } catch (e) {
-    console.error(`Failed to parse search results: ${e.message}`);
-  }
+  const searchData = typeof searchResult === 'string' ? JSON.parse(searchResult) : searchResult;
+  
+  const selection = selectDiverseUrls(searchData, maxResults);
+  const urls = selection.urls;
+  
+  console.log(`✓ Found ${urls.length} sources from ${selection.domainCount} domains\n`);
 
   if (urls.length === 0) {
     throw new Error('No URLs found in search results');
   }
 
-  console.log(`\n${'='.repeat(60)}`);
-  console.log('STEP 5: Scraping and Analyzing Pages');
-  console.log('='.repeat(60));
-  const scrapedContent = [];
+  // Scrape and summarize each source
+  console.log('Step 5: Scraping and summarizing sources...');
+  const researchResults = {
+    query,
+    timestamp: new Date().toISOString(),
+    totalSources: urls.length,
+    sources: []
+  };
 
   for (let i = 0; i < urls.length; i++) {
-    const url = urls[i];
+    const urlData = urls[i];
+    console.log(`\n[${i + 1}/${urls.length}] Processing: ${urlData.domain}`);
+    
     try {
-      const domain = new URL(url).hostname.replace('www.', '');
-      console.log(`Scraping ${i + 1}/${urls.length}: ${domain}`);
-      const content = await scrapeTool.invoke({ url });
-      scrapedContent.push({
-        url,
-        domain,
-        content: typeof content === 'string' ? content : JSON.stringify(content),
+      // Scrape content
+      console.log('  - Scraping content...');
+      const content = await scrapeTool.invoke({ url: urlData.url });
+      const contentText = typeof content === 'string' ? content : JSON.stringify(content);
+      
+      // Generate summary
+      console.log('  - Generating summary...');
+      const summary = await generateSummary(
+        llm, 
+        contentText.substring(0, CONTENT_LIMITS.SCRAPE_PREVIEW),
+        urlData.title,
+        query
+      );
+      
+      // Store in results
+      researchResults.sources.push({
+        id: i + 1,
+        url: urlData.url,
+        domain: urlData.domain,
+        title: urlData.title,
+        snippet: urlData.snippet,
+        summary,
+        contentPreview: contentText.substring(0, 500),
+        scrapedAt: new Date().toISOString(),
+        status: 'success'
       });
+      
+      console.log('  ✓ Complete');
+      
     } catch (error) {
-      console.log(`Failed to scrape ${url}: ${error.message}`);
+      console.log(`  ✗ Failed: ${error.message}`);
+      
+      // Store failed attempt
+      researchResults.sources.push({
+        id: i + 1,
+        url: urlData.url,
+        domain: urlData.domain,
+        title: urlData.title,
+        snippet: urlData.snippet,
+        summary: null,
+        error: error.message,
+        scrapedAt: new Date().toISOString(),
+        status: 'failed'
+      });
     }
   }
 
-  if (scrapedContent.length < urls.length * 0.3) {
-    console.log(`\nWarning: Only ${scrapedContent.length}/${urls.length} pages scraped successfully`);
-    console.log('Results may be incomplete\n');
-  }
+  // Save results to JSON file
+  console.log(`\nStep 6: Saving results to ${outputFile}...`);
+  await fs.writeFile(outputFile, JSON.stringify(researchResults, null, 2));
+  console.log('✓ Results saved\n');
 
-  console.log(`\n${'='.repeat(60)}`);
-  console.log('STEP 6: Synthesizing Research Report');
+  // Display summary
   console.log('='.repeat(60));
-  const started = Date.now();
-
-  const combinedContent = scrapedContent
-    .map(
-      (item, i) =>
-        `\n=== Source ${i + 1} [${item.domain}]: ${item.url} ===\n${item.content.substring(
-          0,
-          CONTENT_LIMITS.SCRAPE_PREVIEW
-        )}`
-    )
-    .join('\n\n');
-
-  const uniqueDomains = new Set(scrapedContent.map(s => s.domain));
-  console.log(`Synthesizing from ${scrapedContent.length} pages across ${uniqueDomains.size} domains`);
-
-  let result;
-  if (llm) {
-    const synthesisResponse = await llm.invoke([
-      {
-        role: 'system',
-        content:
-          'Analyze web sources and create a comprehensive research report. Include key findings and cite sources with URLs.',
-      },
-      {
-        role: 'user',
-        content: `Query: ${query}\n\nSources:\n${combinedContent}\n\nCreate a comprehensive research report with citations.`,
-      },
-    ]);
-    result = synthesisResponse.content;
-  } else {
-    result = heuristicSummarize(query, scrapedContent);
-  }
-
-  const executionTime = Math.round((Date.now() - started) / 1000);
-
-  console.log(`\n${'='.repeat(60)}`);
-  console.log('STEP 7: Research Complete');
+  console.log('RESEARCH COMPLETE');
   console.log('='.repeat(60));
-  console.log(`Completed in ${executionTime} seconds`);
-
-  // Display results
-  console.log('\n' + '='.repeat(80));
-  console.log('RESEARCH RESULTS');
-  console.log('='.repeat(80));
-  console.log(result);
-  console.log('='.repeat(80));
-
-  console.log('\nResearch Statistics:');
-  console.log(`   - Execution time: ${executionTime}s`);
-  console.log(`   - Sources analyzed: ${scrapedContent.length}`);
-  console.log('   - Tools used:');
-  console.log('     - search_engine: 1x');
-  console.log(`     - scrape_as_markdown: ${scrapedContent.length}x`);
-  console.log('\n');
+  console.log(`Query: ${query}`);
+  console.log(`Total sources processed: ${researchResults.sources.length}`);
+  console.log(`Successful: ${researchResults.sources.filter(s => s.status === 'success').length}`);
+  console.log(`Failed: ${researchResults.sources.filter(s => s.status === 'failed').length}`);
+  console.log(`\nResults stored in: ${outputFile}`);
+  console.log('='.repeat(60));
 
   try {
     await client.close();
   } catch {}
 
-  return {
-    query,
-    result,
-    toolUsage: { search_engine: 1, scrape_as_markdown: scrapedContent.length },
-    executionTime,
-    sourcesAnalyzed: scrapedContent.length,
-  };
+  return researchResults;
+}
+
+/**
+ * Display research results in console
+ */
+function displayResults(results) {
+  console.log('\n' + '='.repeat(80));
+  console.log('RESEARCH RESULTS PREVIEW');
+  console.log('='.repeat(80));
+  
+  results.sources.forEach((source, idx) => {
+    if (source.status === 'success') {
+      console.log(`\n[${idx + 1}] ${source.title}`);
+      console.log(`Domain: ${source.domain}`);
+      console.log(`URL: ${source.url}`);
+      console.log(`\nSummary:`);
+      console.log(source.summary);
+      console.log('-'.repeat(80));
+    }
+  });
 }
 
 async function main() {
   try {
-    validateConfig();
     const args = process.argv.slice(2);
-    const query = args.length > 0 ? args.join(' ') : 'latest AI developments 2025';
-    await runWorkflow(query, { maxResults: CONTENT_LIMITS.MAX_RESULTS });
+    
+    // Parse command line arguments
+    let query = 'latest AI developments 2025';
+    let maxResults = CONTENT_LIMITS.MAX_RESULTS;
+    let outputFile = 'research_results.json';
+    
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--max' && args[i + 1]) {
+        maxResults = parseInt(args[i + 1]);
+        i++;
+      } else if (args[i] === '--output' && args[i + 1]) {
+        outputFile = args[i + 1];
+        i++;
+      } else if (!args[i].startsWith('--')) {
+        query = args.slice(i).join(' ');
+        break;
+      }
+    }
+    
+    const results = await runResearchWorkflow(query, { maxResults, outputFile });
+    displayResults(results);
+    
   } catch (error) {
-    console.error(`Error: ${error.message}`);
+    console.error(`\n❌ Error: ${error.message}`);
     process.exit(1);
   }
 }
@@ -256,71 +293,3 @@ if (isMain) {
 }
 
 export { runWorkflow };
-
-// Heuristic Fallback Logic (unchanged)
-function topKeywords(text, n = 15) {
-  const counts = new Map();
-  for (const raw of text.toLowerCase().split(/[^a-z0-9]+/g)) {
-    const w = raw.trim();
-    if (!w || STOPWORDS.has(w) || w.length < 3) continue;
-    counts.set(w, (counts.get(w) || 0) + 1);
-  }
-  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([w]) => w);
-}
-
-function firstSentences(md, max = 3) {
-  const text = md.replace(/[#>*`_\-]+/g, ' ').replace(/\s+/g, ' ').trim();
-  const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
-  return sentences.slice(0, max);
-}
-
-function extractHeadings(md, max = 5) {
-  const lines = md.split(/\r?\n/);
-  const heads = [];
-  for (const line of lines) {
-    const m = line.match(/^(#{1,3})\s+(.*)/);
-    if (m) heads.push(m[2].trim());
-    if (heads.length >= max) break;
-  }
-  return heads;
-}
-
-function heuristicSummarize(query, scrapedContent) {
-  const pieces = scrapedContent.map((s, i) => ({
-    url: s.url,
-    domain: s.domain,
-    headings: extractHeadings(s.content, 2),
-    sentences: firstSentences(s.content, 2),
-  }));
-
-  const combinedText = scrapedContent.map(s => s.content).join('\n');
-  const keywords = topKeywords(combinedText, 12);
-
-  const lines = [];
-  lines.push(`Heuristic Summary for: ${query}`);
-  lines.push('');
-  lines.push('Overview:');
-  for (const p of pieces.slice(0, 5)) {
-    if (p.headings.length > 0) {
-      lines.push(`- ${p.headings[0]} (${p.domain})`);
-    } else if (p.sentences.length > 0) {
-      lines.push(`- ${p.sentences[0]} (${p.domain})`);
-    }
-  }
-  if (pieces.length > 5) lines.push(`- ...and ${pieces.length - 5} more sources`);
-
-  lines.push('');
-  lines.push('Key Topics:');
-  lines.push(`- ${keywords.join(', ')}`);
-
-  lines.push('');
-  lines.push('Sources:');
-  for (const p of pieces) {
-    lines.push(`- ${p.domain}: ${p.url}`);
-  }
-
-  lines.push('');
-  lines.push('(Rendered without an LLM. Set GOOGLE_API_KEY for higher-quality synthesis.)');
-
-  return lines.join('\n');
-}
