@@ -13,13 +13,13 @@ import { fileURLToPath } from 'url';
 const CONFIG = {
   apiKey: process.env.BRIGHTDATA_API_KEY,
   googleKey: process.env.GOOGLE_API_KEY,
-  googleModel: process.env.GOOGLE_MODEL || 'gemini-1.5-flash',
+  googleModel: process.env.GOOGLE_MODEL || 'gemini-2.5-flash',
 };
 
 // Content processing constants
 const CONTENT_LIMITS = {
   SCRAPE_PREVIEW: 3000,  // Characters to include per scraped page in synthesis
-  MAX_RESULTS: 10,       // Default maximum URLs to analyze
+  MAX_RESULTS: 3,       // Default maximum URLs to analyze
   MAX_DOMAINS_PER_SOURCE: 2, // Maximum pages per domain for diversity
 };
 
