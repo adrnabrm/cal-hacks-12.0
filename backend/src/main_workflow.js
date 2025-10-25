@@ -20,8 +20,76 @@ const CONFIG = {
 const CONTENT_LIMITS = {
   SCRAPE_PREVIEW: 3000,  // Characters to include per scraped page
   MAX_RESULTS: 5,        // Default maximum URLs to analyze
-  MAX_DOMAINS_PER_SOURCE: 2, // Maximum pages per domain for diversity
+  MAX_DOMAINS_PER_SOURCE: 5, // Maximum pages per domain for diversity (increased for larger requests)
 };
+
+// Trusted academic and research domains
+const TRUSTED_DOMAINS = [
+  // Academic publishers
+  'ieee.org',
+  'acm.org',
+  'springer.com',
+  'arxiv.org',
+  'nature.com',
+  'science.org',
+  'sciencedirect.com',
+  'wiley.com',
+  'tandfonline.com',
+  'sagepub.com',
+  'mdpi.com',
+  'frontiersin.org',
+  'plos.org',
+  'oup.com',  // Oxford University Press
+  'cambridge.org',
+  
+  // Research repositories
+  'researchgate.net',
+  'semanticscholar.org',
+  'scholar.google.com',
+  'pubmed.ncbi.nlm.nih.gov',
+  'ncbi.nlm.nih.gov',
+  'biorxiv.org',
+  'medrxiv.org',
+  'ssrn.com',
+  
+  // University domains (common patterns)
+  '.edu',
+  'mit.edu',
+  'stanford.edu',
+  'berkeley.edu',
+  'harvard.edu',
+  'oxford.ac.uk',
+  'cambridge.ac.uk',
+  
+  // Research institutions
+  'nist.gov',
+  'nasa.gov',
+  'cern.ch',
+  'nih.gov',
+  'nsf.gov',
+];
+
+/**
+ * Check if a URL is from a trusted academic/research domain
+ */
+function isTrustedDomain(url) {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname.toLowerCase();
+    
+    // Check if hostname matches or ends with any trusted domain
+    return TRUSTED_DOMAINS.some(trusted => {
+      // For patterns like '.edu', check if domain ends with it
+      if (trusted.startsWith('.')) {
+        return hostname.endsWith(trusted);
+      }
+      // For full domains, check exact match or subdomain
+      return hostname === trusted || hostname.endsWith('.' + trusted);
+    });
+  } catch {
+    return false;
+  }
+}
 
 function validateConfig() {
   const missing = [];
@@ -40,26 +108,47 @@ function validateInput(query, maxResults) {
 }
 
 /**
- * Selects diverse URLs from search results
+ * Selects diverse URLs from search results, filtering for trusted domains
+ * Uses adaptive domain limits to reach target maxResults
  */
 function selectDiverseUrls(searchData, maxResults) {
   const urls = [];
   const perDomain = {};
+  let skippedCount = 0;
+  
+  // Calculate dynamic per-domain limit based on maxResults
+  // For small requests (≤5), limit to 2 per domain for diversity
+  // For larger requests, allow more per domain to reach the target
+  const dynamicLimit = maxResults <= 5 ? 2 : Math.ceil(maxResults / 4);
 
   if (searchData.organic && Array.isArray(searchData.organic)) {
+    // First pass: collect all trusted domain URLs
     for (const result of searchData.organic) {
-      if (result.link && urls.length < maxResults) {
+      if (result.link) {
         try {
           const domain = new URL(result.link).hostname.replace('www.', '');
 
-          if ((perDomain[domain] || 0) < CONTENT_LIMITS.MAX_DOMAINS_PER_SOURCE) {
+          // Filter: Only accept trusted academic/research domains
+          if (!isTrustedDomain(result.link)) {
+            skippedCount++;
+            continue;
+          }
+
+          // Use dynamic limit per domain
+          const currentFromDomain = perDomain[domain] || 0;
+          if (urls.length < maxResults && currentFromDomain < dynamicLimit) {
             urls.push({
               url: result.link,
               title: result.title || 'Untitled',
               snippet: result.description || '',
               domain
             });
-            perDomain[domain] = (perDomain[domain] || 0) + 1;
+            perDomain[domain] = currentFromDomain + 1;
+          }
+          
+          // Stop once we have enough URLs
+          if (urls.length >= maxResults) {
+            break;
           }
         } catch {
           // Skip invalid URLs
@@ -68,7 +157,12 @@ function selectDiverseUrls(searchData, maxResults) {
     }
   }
 
-  return { urls, domainCount: Object.keys(perDomain).length };
+  return { 
+    urls, 
+    domainCount: Object.keys(perDomain).length,
+    skippedCount,
+    perDomainLimit: dynamicLimit
+  };
 }
 
 /**
@@ -79,11 +173,11 @@ async function generateSummary(llm, content, sourceTitle, query) {
     const response = await llm.invoke([
       {
         role: 'system',
-        content: 'You are a research assistant. Create a concise 2-3 paragraph summary of the provided content, focusing on information relevant to the research query. Highlight key findings and important details.',
+        content: 'You are a research assistant specializing in creating educational summaries. Your goal is to extract and explain the core concepts, ideas, and findings from content. Focus on WHAT the content teaches and WHY it matters, not on publication details or metadata. When technical terms appear, briefly explain them in simple language. Make the summary accessible to someone learning about the topic.',
       },
       {
         role: 'user',
-        content: `Research Query: ${query}\n\nSource Title: ${sourceTitle}\n\nContent:\n${content}\n\nProvide a comprehensive summary:`,
+        content: `Research Query: ${query}\n\nSource: ${sourceTitle}\n\n${content}\n\nCreate a 2-3 paragraph summary that:\n1. Explains the main concepts and key ideas presented\n2. Defines any technical terminology in simple terms\n3. Highlights why these findings or concepts are significant\n4. Focuses on the substance and insights, NOT on publication details, author names, or paper metadata\n\nSummary:`,
       },
     ]);
     return response.content;
@@ -140,16 +234,29 @@ async function runWorkflow(query, options = {}) {
 
   // Search the web
   console.log('Step 4: Searching the web...');
-  const searchResult = await searchTool.invoke({ query, engine: 'google' });
+  const searchResult = await searchTool.invoke({
+    query: `${query} research paper`,
+    engine: 'google'
+  });
   const searchData = typeof searchResult === 'string' ? JSON.parse(searchResult) : searchResult;
   
   const selection = selectDiverseUrls(searchData, maxResults);
   const urls = selection.urls;
   
-  console.log(`✓ Found ${urls.length} sources from ${selection.domainCount} domains\n`);
+  console.log(`✓ Found ${urls.length} trusted sources from ${selection.domainCount} domains`);
+  console.log(`  (Max ${selection.perDomainLimit} URLs per domain)`);
+  if (selection.skippedCount > 0) {
+    console.log(`  (Filtered out ${selection.skippedCount} non-academic sources)`);
+  }
+  console.log();
 
   if (urls.length === 0) {
-    throw new Error('No URLs found in search results');
+    throw new Error('No trusted academic sources found in search results. Try broadening your search query.');
+  }
+  
+  if (urls.length < maxResults) {
+    console.log(`⚠️  Warning: Only found ${urls.length} trusted sources (requested ${maxResults})`);
+    console.log(`   Continuing with available sources...\n`);
   }
 
   // Scrape and summarize each source
@@ -188,7 +295,6 @@ async function runWorkflow(query, options = {}) {
         title: urlData.title,
         snippet: urlData.snippet,
         summary,
-        contentPreview: contentText.substring(0, 500),
         scrapedAt: new Date().toISOString(),
         status: 'success'
       });
@@ -278,7 +384,7 @@ async function main() {
       }
     }
     
-    const results = await runResearchWorkflow(query, { maxResults, outputFile });
+    const results = await runWorkflow(query, { maxResults, outputFile });
     displayResults(results);
     
   } catch (error) {

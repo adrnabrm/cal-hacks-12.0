@@ -16,7 +16,7 @@ app.get("/heath", (_req, res) => res.send("ok"));
 app.get("/agent", async(req, res) => {
   try {
       const q = req.query.q || "latest AI developments 2025";
-      const data = await runWorkflow(q, { maxResults: 10 });
+      const data = await runWorkflow(q, { maxResults: 20 });
       res.json({ ok: true, ...data });
     } catch (e) {
       res.status(500).json({ ok: false, error: e.message });
