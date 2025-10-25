@@ -20,7 +20,7 @@ const CONFIG = {
 const CONTENT_LIMITS = {
   SCRAPE_PREVIEW: 3000,  // Characters to include per scraped page
   MAX_RESULTS: 5,        // Default maximum URLs to analyze
-  MAX_DOMAINS_PER_SOURCE: 2, // Maximum pages per domain for diversity
+  MAX_DOMAINS_PER_SOURCE: 5, // Maximum pages per domain for diversity (increased for larger requests)
 };
 
 // Trusted academic and research domains
@@ -109,15 +109,22 @@ function validateInput(query, maxResults) {
 
 /**
  * Selects diverse URLs from search results, filtering for trusted domains
+ * Uses adaptive domain limits to reach target maxResults
  */
 function selectDiverseUrls(searchData, maxResults) {
   const urls = [];
   const perDomain = {};
   let skippedCount = 0;
+  
+  // Calculate dynamic per-domain limit based on maxResults
+  // For small requests (≤5), limit to 2 per domain for diversity
+  // For larger requests, allow more per domain to reach the target
+  const dynamicLimit = maxResults <= 5 ? 2 : Math.ceil(maxResults / 4);
 
   if (searchData.organic && Array.isArray(searchData.organic)) {
+    // First pass: collect all trusted domain URLs
     for (const result of searchData.organic) {
-      if (result.link && urls.length < maxResults) {
+      if (result.link) {
         try {
           const domain = new URL(result.link).hostname.replace('www.', '');
 
@@ -127,14 +134,21 @@ function selectDiverseUrls(searchData, maxResults) {
             continue;
           }
 
-          if ((perDomain[domain] || 0) < CONTENT_LIMITS.MAX_DOMAINS_PER_SOURCE) {
+          // Use dynamic limit per domain
+          const currentFromDomain = perDomain[domain] || 0;
+          if (urls.length < maxResults && currentFromDomain < dynamicLimit) {
             urls.push({
               url: result.link,
               title: result.title || 'Untitled',
               snippet: result.description || '',
               domain
             });
-            perDomain[domain] = (perDomain[domain] || 0) + 1;
+            perDomain[domain] = currentFromDomain + 1;
+          }
+          
+          // Stop once we have enough URLs
+          if (urls.length >= maxResults) {
+            break;
           }
         } catch {
           // Skip invalid URLs
@@ -146,7 +160,8 @@ function selectDiverseUrls(searchData, maxResults) {
   return { 
     urls, 
     domainCount: Object.keys(perDomain).length,
-    skippedCount 
+    skippedCount,
+    perDomainLimit: dynamicLimit
   };
 }
 
@@ -219,16 +234,29 @@ async function runWorkflow(query, options = {}) {
 
   // Search the web
   console.log('Step 4: Searching the web...');
-  const searchResult = await searchTool.invoke({ query, engine: 'google' });
+  const searchResult = await searchTool.invoke({
+    query: `${query} research paper`,
+    engine: 'google'
+  });
   const searchData = typeof searchResult === 'string' ? JSON.parse(searchResult) : searchResult;
   
   const selection = selectDiverseUrls(searchData, maxResults);
   const urls = selection.urls;
   
-  console.log(`✓ Found ${urls.length} sources from ${selection.domainCount} domains\n`);
+  console.log(`✓ Found ${urls.length} trusted sources from ${selection.domainCount} domains`);
+  console.log(`  (Max ${selection.perDomainLimit} URLs per domain)`);
+  if (selection.skippedCount > 0) {
+    console.log(`  (Filtered out ${selection.skippedCount} non-academic sources)`);
+  }
+  console.log();
 
   if (urls.length === 0) {
-    throw new Error('No URLs found in search results');
+    throw new Error('No trusted academic sources found in search results. Try broadening your search query.');
+  }
+  
+  if (urls.length < maxResults) {
+    console.log(`⚠️  Warning: Only found ${urls.length} trusted sources (requested ${maxResults})`);
+    console.log(`   Continuing with available sources...\n`);
   }
 
   // Scrape and summarize each source
@@ -267,7 +295,6 @@ async function runWorkflow(query, options = {}) {
         title: urlData.title,
         snippet: urlData.snippet,
         summary,
-        contentPreview: contentText.substring(0, 500),
         scrapedAt: new Date().toISOString(),
         status: 'success'
       });
@@ -357,7 +384,7 @@ async function main() {
       }
     }
     
-    const results = await runResearchWorkflow(query, { maxResults, outputFile });
+    const results = await runWorkflow(query, { maxResults, outputFile });
     displayResults(results);
     
   } catch (error) {
