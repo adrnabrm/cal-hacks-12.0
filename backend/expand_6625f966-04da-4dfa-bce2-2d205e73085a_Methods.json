@@ -1,0 +1,19 @@
+{
+  "query": "Methods arXiv preprint server scholarly abstract data models research paper sectioning standards academic metadata management scientific document information extraction digital scholarly repositories",
+  "timestamp": "2025-10-26T11:28:26.342Z",
+  "totalSources": 5,
+  "sources": [
+    {
+      "id": "8b5856a2-d9f5-40b9-9387-13a98d7a1f1d",
+      "url": "https://arxiv.org/abs/1710.10201",
+      "summary": "This arXiv abstract highlights a critical challenge in modern academia: the overwhelming volume of scientific literature in the digital age, which impedes researchers' ability to keep pace with new discoveries and propagate knowledge efficiently.\n\nThe core concept is that **machine-readable metadata** is indispensable for overcoming this information overload. While digital scholarly repositories provide access to full texts, advanced research infrastructures require structured metadata to offer sophisticated services. These services include:\n\n*   **Intelligent search tools:** Beyond keyword matching.\n*   **Document recommendations:** Suggesting similar or related papers.\n*   **Visualization of networks:** Mapping citation and author connections.\n*   **Quality and impact assessment:** Evaluating the significance of articles.\n\nThe paper, \"New Methods for Metadata Extraction from Scientific Literature,\" addresses the necessity of developing effective methods for extracting this high-quality metadata. This is crucial for **academic metadata management** and **scientific document information extraction**, as it underpins the functionality of modern **digital scholarly repositories** and enables more efficient knowledge discovery and scholarly communication.",
+      "status": "success"
+    },
+    {
+      "id": "a9c25893-0665-4c4a-892b-a5fd10d9d470",
+      "url": "https://arxiv.org/abs/2510.04749",
+      "summary": "This arXiv preprint abstract introduces research on leveraging Large Language Models (LLMs) for **scientific document information extraction**. The core problem addressed is the overwhelming volume of scholarly publications, which complicates **knowledge discovery and management** within **digital scholarly repositories**.\n\nThe proposed method involves developing a system that uses LLMs to perform **semantic extraction of key concepts** from scientific documents. This process aims to generate richer, more structured information, thereby enhancing **academic metadata management**. While not explicitly detailing **data models** or **research paper sectioning standards**, the semantic extraction of key concepts is foundational to creating more effective data models for scholarly information and could potentially inform future standards for structuring and accessing content within different sections of research papers.\n\nUltimately, this work seeks to provide advanced tools to support scientific literature research and publication workflows, making knowledge more accessible and manageable. The research is being conducted within the German National Research Data Infrastructure for Computer Science (NFDI4CS).",
+      "status": "success"
+    }
+  ]
+}
