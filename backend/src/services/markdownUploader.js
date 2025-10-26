@@ -1,5 +1,5 @@
-import { supabase } from '../db/supabaseClient.js';
-import { updateNode } from '../db/nodes.js';
+import { supabase } from '../database/supabaseClient.js';
+import { updateNode } from '../database/nodes.js';
 
 export async function uploadMarkdown(nodeId, markdownText) {
   const filePath = `nodes/${nodeId}/paper.md`;
