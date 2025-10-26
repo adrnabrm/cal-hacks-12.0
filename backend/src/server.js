@@ -1,3 +1,4 @@
+// src/server.js
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
@@ -52,6 +53,7 @@ try {
         .single();
 
       if (treeError) throw treeError;
+
       res.json({ ok: true, treeId: tree.id });
     } catch (e) {
       console.error("Create tree error:", e);
@@ -96,9 +98,9 @@ try {
 
     try {
       // 1️⃣ Verify tree ownership
-      const { error: treeError } = await supabase
+      const { data: tree, error: treeError } = await supabase
         .from("trees")
-        .select("id")
+        .select("*")
         .eq("id", treeId)
         .eq("user_id", user.id)
         .single();
@@ -125,7 +127,7 @@ try {
         .single();
       if (rootErr) throw rootErr;
 
-      // 4️⃣ Prepare and insert child nodes
+      // 4️⃣ Insert children (each source becomes a node)
       const childrenToInsert = sources.map((s) => ({
         tree_id: treeId,
         parent_node_id: rootNode.id,
@@ -144,22 +146,19 @@ try {
         created_at: new Date(),
       }));
 
-      let insertedChildren = [];
       if (childrenToInsert.length > 0) {
-        const { data: inserted, error: insertErr } = await supabase
+        const { error: insertErr } = await supabase
           .from("nodes")
-          .insert(childrenToInsert)
-          .select(); // ✅ returns new rows with UUIDs
+          .insert(childrenToInsert);
         if (insertErr) throw insertErr;
-        insertedChildren = inserted;
       }
 
-      // 5️⃣ Return root + children with IDs
+      // 5️⃣ Return root + children to frontend
       res.json({
         ok: true,
         treeRoot: {
           ...rootNode,
-          children: insertedChildren,
+          children: childrenToInsert,
         },
       });
     } catch (e) {
@@ -183,13 +182,11 @@ try {
       if (parentErr) throw parentErr;
 
       // 2️⃣ Run Bright Data again for expansion
-      const expandPrompt = `${
-        parentNode.results_json?.title || "Paper"
-      } — expand section: ${section}`;
+      const expandPrompt = `${parentNode.results_json?.title || "Paper"} — expand section: ${section}`;
       const workflowResult = await runWorkflow(expandPrompt, { maxResults: 6 });
       const sources = workflowResult?.sources || [];
 
-      // 3️⃣ Insert children under this node
+      // 3️⃣ Insert children
       const children = sources.map((s) => ({
         tree_id: parentNode.tree_id,
         parent_node_id: nodeId,
@@ -208,17 +205,14 @@ try {
         created_at: new Date(),
       }));
 
-      let insertedChildren = [];
       if (children.length > 0) {
-        const { data: inserted, error: insertErr } = await supabase
+        const { error: insertErr } = await supabase
           .from("nodes")
-          .insert(children)
-          .select(); // ✅ ensures returned IDs
+          .insert(children);
         if (insertErr) throw insertErr;
-        insertedChildren = inserted;
       }
 
-      res.json({ ok: true, children: insertedChildren });
+      res.json({ ok: true, children });
     } catch (e) {
       console.error("Expand node error:", e);
       res.status(500).json({ ok: false, error: e.message });
@@ -297,9 +291,7 @@ try {
     res.send("Backend running. Try /agent?q=... or POST /api/trees")
   );
 
-  app.listen(port, () =>
-    console.log(`✅ Backend listening on :${port}`)
-  );
+  app.listen(port, () => console.log(`✅ Backend listening on :${port}`));
 } catch (error) {
   console.error("❌ Fatal error during startup:", error);
   process.exit(1);

@@ -15,9 +15,6 @@ interface Props {
 export default function Sidebar({ node, onClose, onExpand }: Props) {
   if (!node) return null;
 
-  // ✅ Safely unwrap the JSON payload (new DB format)
-  const data = node.results_json || {};
-
   const sections = ['Introduction', 'Methods', 'Results', 'Discussion', 'Conclusion'];
 
   return (
@@ -33,9 +30,7 @@ export default function Sidebar({ node, onClose, onExpand }: Props) {
         >
           {/* Header */}
           <div className="flex justify-between items-center p-6 border-b border-green-100 bg-green-50">
-            <h2 className="text-2xl font-semibold text-green-800">
-              {data.title || 'Untitled Node'}
-            </h2>
+            <h2 className="text-2xl font-semibold text-green-800">{node.title}</h2>
             <button onClick={onClose} aria-label="Close sidebar">
               <X className="w-6 h-6 text-green-700 hover:text-green-900" />
             </button>
@@ -51,9 +46,9 @@ export default function Sidebar({ node, onClose, onExpand }: Props) {
             className="p-6 overflow-y-auto flex-1"
           >
             {/* Authors */}
-            {Array.isArray(data.authors) && data.authors.length > 0 && (
+            {node.authors && node.authors.length > 0 && (
               <p className="text-sm text-green-600 mb-3">
-                <strong>Authors:</strong> {data.authors.join(', ')}
+                <strong>Authors:</strong> {node.authors.join(', ')}
               </p>
             )}
 
@@ -63,17 +58,17 @@ export default function Sidebar({ node, onClose, onExpand }: Props) {
               <div
                 className="bg-green-50 border border-green-100 rounded p-2 mt-1 whitespace-pre-wrap"
                 dangerouslySetInnerHTML={{
-                  __html: hljs.highlight(data.summary || '', { language: 'plaintext' }).value,
+                  __html: hljs.highlight(node.summary || '', { language: 'plaintext' }).value,
                 }}
               />
             </div>
 
             {/* Keywords */}
-            {Array.isArray(data.keywords) && data.keywords.length > 0 && (
+            {node.keywords && node.keywords.length > 0 && (
               <div className="text-sm text-green-700 mb-6">
                 <strong>Keywords:</strong>
                 <ul className="list-disc ml-5 mt-1">
-                  {data.keywords.map((kw: string) => (
+                  {node.keywords.map((kw) => (
                     <li key={kw}>{kw}</li>
                   ))}
                 </ul>
