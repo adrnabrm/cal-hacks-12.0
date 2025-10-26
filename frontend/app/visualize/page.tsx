@@ -8,7 +8,7 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, X, Plus, Trash2, Pencil, Check } from 'lucide-react';
 
-// --- Full Example Tree ---
+// --- Example Tree ---
 const exampleTree = {
   id: 'seed1',
   title: 'Seed Paper: Climate Change Impact',
@@ -45,6 +45,7 @@ const exampleTree = {
           keywords: ['data', 'temperature'],
           summary: 'Analyzing temperature datasets.',
         },
+        
       ],
     },
   ],
@@ -52,6 +53,7 @@ const exampleTree = {
 
 export default function VisualizePage() {
   const svgRef = useRef<SVGSVGElement | null>(null);
+
   const [trees, setTrees] = useState<Record<string, any>>({
     new_tree: null,
     example_tree: exampleTree,
@@ -62,13 +64,14 @@ export default function VisualizePage() {
   });
   const [activeTab, setActiveTab] = useState('new_tree');
   const [popupNode, setPopupNode] = useState<any | null>(null);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [editingTab, setEditingTab] = useState<string | null>(null);
   const [newTabName, setNewTabName] = useState('');
+  const [isWatering, setIsWatering] = useState(false);
+  const [renderedTabs, setRenderedTabs] = useState<Set<string>>(new Set());
 
-  // --- Draw tree visualization ---
-  const drawTree = (data: any) => {
+  // --- Draw Tree ---
+  const drawTree = (tabId: string, data: any, firstTime: boolean) => {
     if (!svgRef.current) return;
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -77,14 +80,12 @@ export default function VisualizePage() {
       .select(svgRef.current)
       .attr('width', width)
       .attr('height', height)
-      .style('cursor', 'grab')
       .style('background', 'linear-gradient(to top, #ecfdf5, #f0fdf4)');
     svg.selectAll('*').remove();
 
-    const g = svg.append('g').attr('class', 'zoom-group');
-    const treeGroup = g.append('g').attr('class', 'tree-group');
+    const g = svg.append('g');
+    const treeGroup = g.append('g');
 
-    // --- Zoom + pan ---
     const zoom = d3
       .zoom()
       .scaleExtent([0.3, 5])
@@ -92,344 +93,410 @@ export default function VisualizePage() {
         [-width * 2, -height * 2],
         [width * 3, height * 3],
       ])
-      .filter((event) => !event.button && !event.shiftKey)
-      .on('zoom', (event) => g.attr('transform', event.transform));
-
+      .on('zoom', (e) => g.attr('transform', e.transform));
     svg.call(zoom);
-    svg.call(zoom.transform, d3.zoomIdentity.scale(1));
-    svg.on('mousedown', () => svg.style('cursor', 'grabbing')).on('mouseup', () => svg.style('cursor', 'grab'));
 
     const seedY = height - 100;
     const seedX = width / 2;
 
-    // --- Ground / Soil ---
+    // --- Soil / Ground ---
     const defs = svg.append('defs');
-    const gradient = defs
+    const grad = defs
       .append('linearGradient')
       .attr('id', 'soil-gradient')
       .attr('x1', '0%')
       .attr('y1', '0%')
       .attr('x2', '0%')
       .attr('y2', '100%');
-    gradient.append('stop').attr('offset', '0%').attr('stop-color', '#a16207').attr('stop-opacity', 0.4);
-    gradient.append('stop').attr('offset', '100%').attr('stop-color', '#451a03').attr('stop-opacity', 0.8);
+    grad.append('stop').attr('offset', '0%').attr('stop-color', '#a16207').attr('stop-opacity', 0.4);
+    grad.append('stop').attr('offset', '100%').attr('stop-color', '#451a03').attr('stop-opacity', 0.8);
 
-    const hillWidth = 800;
-    const hillDepth = 120;
-    const ground = treeGroup.append('g');
     const hillPath = d3
       .line()
       .curve(d3.curveCatmullRom.alpha(0.5))([
-        [seedX - hillWidth / 2, seedY],
-        [seedX - hillWidth / 3, seedY - 25],
+        [seedX - 400, seedY],
+        [seedX - 200, seedY - 25],
         [seedX, seedY - 35],
-        [seedX + hillWidth / 3, seedY - 25],
-        [seedX + hillWidth / 2, seedY],
+        [seedX + 200, seedY - 25],
+        [seedX + 400, seedY],
       ]);
 
+    const ground = treeGroup.append('g');
     ground
       .append('path')
-      .attr('d', `${hillPath} L ${seedX + hillWidth / 2}, ${seedY + hillDepth} Q ${seedX}, ${seedY + hillDepth + 40}, ${seedX - hillWidth / 2}, ${seedY + hillDepth} Z`)
-      .attr('fill', 'url(#soil-gradient)')
-      .attr('opacity', 0)
-      .transition()
-      .duration(1000)
-      .attr('opacity', 1);
-
+      .attr('d', `${hillPath} L ${seedX + 400}, ${seedY + 120} Q ${seedX}, ${seedY + 160}, ${seedX - 400}, ${seedY + 120} Z`)
+      .attr('fill', 'url(#soil-gradient)');
     ground
       .append('path')
       .attr('d', hillPath)
       .attr('fill', 'none')
       .attr('stroke', '#78350f')
-      .attr('stroke-width', 6)
-      .attr('stroke-linecap', 'round');
+      .attr('stroke-width', 6);
 
     const stem = ground
       .append('line')
       .attr('x1', seedX)
       .attr('x2', seedX)
       .attr('y1', seedY)
-      .attr('y2', seedY)
+      .attr('y2', firstTime ? seedY : seedY - 60)
       .attr('stroke', '#166534')
       .attr('stroke-width', 4)
       .attr('stroke-linecap', 'round');
-    stem.transition().delay(800).duration(1000).attr('y2', seedY - 60);
+    if (firstTime) stem.transition().duration(1000).attr('y2', seedY - 60);
 
-    // Stop here if tree is blank
     if (!data) return;
 
-    // --- Tree structure ---
     const root = d3.hierarchy(data);
-    const treeLayout = d3.tree().nodeSize([240, 220]);
-    treeLayout(root);
-    root.descendants().forEach((d: any) => {
-      if (!d.children) d.y += Math.random() * 40 - 20;
-    });
+    const layout = d3.tree().nodeSize([240, 220]);
+    layout(root);
 
-    const linkGroup = treeGroup.append('g').attr('class', 'links');
-    const nodeGroup = treeGroup.append('g').attr('class', 'nodes');
+    const linkGroup = treeGroup.append('g');
+    const nodeGroup = treeGroup.append('g');
 
-    const bezierLink = (d: any) => {
-      const radius = 25;
-      const sx = d.source.x + seedX;
-      const sy = seedY - d.source.y + (d.source.depth === 0 ? radius : 0);
-      const tx = d.target.x + seedX;
-      const ty = seedY - d.target.y - radius;
+    const bezier = (d: any) => {
+      const sx = d.source.x + seedX,
+        sy = seedY - d.source.y,
+        tx = d.target.x + seedX,
+        ty = seedY - d.target.y;
       const midY = (sy + ty) / 2;
-      const siblingOffset = (d.target.x - d.source.x) * 0.3;
-      return `M${sx},${sy} C${sx + siblingOffset},${midY} ${tx - siblingOffset},${midY} ${tx},${ty}`;
+      return `M${sx},${sy} C${sx},${midY} ${tx},${midY} ${tx},${ty}`;
     };
 
-    // Links
-    linkGroup
-      .selectAll('path.link')
+    // --- Animate Links (Branches) ---
+    const links = linkGroup
+      .selectAll('path')
       .data(root.links())
       .enter()
       .append('path')
       .attr('fill', 'none')
       .attr('stroke', '#16a34a')
       .attr('stroke-width', 2)
-      .attr('d', (d: any) => bezierLink(d))
-      .each(function () {
-        const len = (this as SVGPathElement).getTotalLength();
-        d3.select(this)
-          .attr('stroke-dasharray', `${len} ${len}`)
-          .attr('stroke-dashoffset', len)
-          .transition()
-          .delay((_, i) => 900 + i * 150)
-          .duration(900)
-          .attr('stroke-dashoffset', 0);
+      .attr('stroke-linecap', 'round')
+      .attr('d', (d) => {
+        const sx = d.source.x + seedX,
+          sy = seedY - d.source.y;
+        return `M${sx},${sy}C${sx},${sy} ${sx},${sy} ${sx},${sy}`;
       });
 
-    // Nodes
+    if (firstTime) {
+      links
+        .transition()
+        .delay((_, i) => i * 150)
+        .duration(700)
+        .attrTween('d', function (d) {
+          const sx = d.source.x + seedX,
+            sy = seedY - d.source.y,
+            tx = d.target.x + seedX,
+            ty = seedY - d.target.y;
+          const midY = (sy + ty) / 2;
+          const interp = d3.interpolateNumber(0, 1);
+          return function (t) {
+            const p = interp(t);
+            const cx1 = sx;
+            const cy1 = sy + (midY - sy) * p;
+            const cx2 = tx;
+            const cy2 = ty - (ty - midY) * (1 - p);
+            const x = sx + (tx - sx) * p;
+            const y = sy + (ty - sy) * p;
+            return `M${sx},${sy} C${cx1},${cy1} ${cx2},${cy2} ${x},${y}`;
+          };
+        });
+    } else {
+      links.attr('d', (d) => bezier(d));
+    }
+
+    // --- Nodes ---
     const nodes = nodeGroup
-      .selectAll('g.node')
+      .selectAll('g')
       .data(root.descendants())
       .enter()
       .append('g')
-      .attr('class', 'node')
-      .attr('transform', (d) => `translate(${d.x + seedX}, ${seedY - 60})`)
-      .style('opacity', 0)
-      .style('pointer-events', 'all')
-      .on('click', function (_, d: any) {
-        setPopupNode(d.data);
-        setSelectedNodeId(d.data.id);
-        const circle = d3.select(this).select('circle');
-        circle
-          .transition()
-          .duration(150)
-          .attr('r', 35)
-          .transition()
-          .duration(250)
-          .attr('r', d.depth === 0 ? 30 : 25);
-      });
+      .attr('transform', (d) => `translate(${d.x + seedX},${seedY - d.y})`)
+      .on('click', (_, d: any) => setPopupNode(d.data));
 
-    nodes
-      .transition()
-      .delay((_, i) => 1100 + i * 200)
-      .duration(600)
-      .style('opacity', 1)
-      .attr('transform', (d) => `translate(${d.x + seedX}, ${seedY - d.y})`);
+    if (firstTime) {
+      let done = 0;
+      const total = root.descendants().length;
+      setIsWatering(true);
 
-    nodes
-      .append('circle')
-      .attr('r', 0)
-      .attr('fill', (d: any) => (d.children ? '#22c55e' : '#bbf7d0'))
-      .attr('stroke', '#166534')
-      .attr('stroke-width', 2)
-      .transition()
-      .delay((_, i) => 1200 + i * 200)
-      .duration(500)
-      .attr('r', (d: any) => (d.depth === 0 ? 30 : 25));
+      nodes
+        .append('circle')
+        .attr('r', 0)
+        .attr('fill', (d: any) => (d.children ? '#22c55e' : '#bbf7d0'))
+        .attr('stroke', '#166534')
+        .attr('stroke-width', 2)
+        .transition()
+        .delay((_, i) => 300 + i * 150)
+        .duration(500)
+        .attr('r', (d: any) => (d.depth === 0 ? 30 : 25))
+        .on('end', () => {
+          done++;
+          if (done === total) {
+            setIsWatering(false);
+            setRenderedTabs((prev) => new Set(prev).add(tabId));
+          }
+        });
+    } else {
+      nodes
+        .append('circle')
+        .attr('r', (d: any) => (d.depth === 0 ? 30 : 25))
+        .attr('fill', (d: any) => (d.children ? '#22c55e' : '#bbf7d0'))
+        .attr('stroke', '#166534')
+        .attr('stroke-width', 2);
+    }
 
-    // Labels
-    const labelGroups = nodes.append('g').attr('class', 'label-group').attr('transform', 'translate(0, -45)');
-    labelGroups.each(function (d: any) {
-      const group = d3.select(this);
-      const title = d.data.title;
-      const temp = group
-        .append('text')
-        .attr('font-size', 13)
-        .attr('font-weight', 600)
-        .attr('font-family', '"Georgia", "Times New Roman", serif')
-        .text(title);
-      const width = (temp.node() as SVGTextElement).getBBox().width + 20;
-      temp.remove();
-
-      const siblings = d.parent?.children || [];
-      if (siblings.length > 1) {
-        const index = siblings.indexOf(d);
-        const offset = (index - (siblings.length - 1) / 2) * 15;
-        group.attr('transform', `translate(${offset}, -45)`);
-      }
-
-      group
-        .append('rect')
-        .attr('x', -width / 2)
+    // --- Labels ---
+    const labels = nodes.append('g').attr('transform', 'translate(0,-45)');
+    labels.each(function (d: any, i) {
+      const g = d3.select(this);
+      const t = g.append('text').text(d.data.title).attr('font-size', 13).attr('font-weight', 600);
+      const w = (t.node() as SVGTextElement).getBBox().width + 20;
+      t.remove();
+      g.append('rect')
+        .attr('x', -w / 2)
         .attr('y', -15)
-        .attr('width', width)
+        .attr('width', w)
         .attr('height', 28)
         .attr('rx', 8)
         .attr('fill', 'white')
-        .attr('opacity', 0.9)
-        .attr('stroke', '#bbf7d0')
-        .attr('stroke-width', 1.5);
-
-      group
+        .attr('opacity', 0.9);
+      const text = g
         .append('text')
         .attr('text-anchor', 'middle')
         .attr('font-size', 13)
         .attr('font-weight', 600)
         .attr('fill', '#166534')
-        .attr('font-family', '"Georgia", "Times New Roman", serif')
         .attr('dy', 5)
-        .text(title);
-    });
+        .attr('opacity', firstTime ? 0 : 1)
+        .text(d.data.title);
 
-    interact('.node').draggable(false);
+      if (firstTime) {
+        text
+          .transition()
+          .delay(700 + i * 150)
+          .duration(400)
+          .attr('opacity', 1)
+          .attr('transform', 'translate(0,-5)');
+      }
+    });
   };
 
-  // --- Lifecycle ---
   // --- Lifecycle ---
   useEffect(() => {
-    // Close any open sidebar when switching trees
     setPopupNode(null);
+    const firstTime = !renderedTabs.has(activeTab);
+    drawTree(activeTab, trees[activeTab], firstTime);
+  }, [activeTab, trees]);
 
-  // Draw the new tree
-  drawTree(trees[activeTab]);
-}, [activeTab, trees]);
-
-
-  // --- Tab management ---
-  const handleAddTree = () => {
-    if (Object.keys(trees).length >= 5) {
-      alert('You can only have up to 5 trees.');
-      return;
-    }
-    const newId = `tree_${Date.now()}`;
-    setTrees((prev) => ({ ...prev, [newId]: null }));
-    setTabNames((prev) => ({ ...prev, [newId]: `Tree ${Object.keys(prev).length + 1}` }));
-    setActiveTab(newId);
+  // --- Tab handlers ---
+  const addTree = () => {
+    if (Object.keys(trees).length >= 5) return alert('Max 5 trees');
+    const id = `tree_${Date.now()}`;
+    setTrees({ ...trees, [id]: null });
+    setTabNames({ ...tabNames, [id]: `Tree ${Object.keys(trees).length + 1}` });
+    setActiveTab(id);
   };
-
-  const handleDeleteTree = (id: string) => {
-    if (!confirm(`Delete "${tabNames[id]}"? This cannot be undone.`)) return;
-    const updatedTrees = { ...trees };
-    const updatedNames = { ...tabNames };
-    delete updatedTrees[id];
-    delete updatedNames[id];
-    setTrees(updatedTrees);
-    setTabNames(updatedNames);
-    const nextTab = Object.keys(updatedTrees)[0] || '';
-    setActiveTab(nextTab);
+  const delTree = (id: string) => {
+    if (!confirm(`Delete ${tabNames[id]}?`)) return;
+    const newTrees = { ...trees };
+    const newNames = { ...tabNames };
+    delete newTrees[id];
+    delete newNames[id];
+    setTrees(newTrees);
+    setTabNames(newNames);
+    setRenderedTabs((p) => {
+      const n = new Set(p);
+      n.delete(id);
+      return n;
+    });
+    setActiveTab(Object.keys(newTrees)[0]);
   };
-
-  const startRenaming = (id: string) => {
+  const renameTree = (id: string) => {
     setEditingTab(id);
     setNewTabName(tabNames[id]);
   };
-
   const confirmRename = (id: string) => {
-    setTabNames((prev) => ({ ...prev, [id]: newTabName || prev[id] }));
+    setTabNames({ ...tabNames, [id]: newTabName || tabNames[id] });
     setEditingTab(null);
   };
 
-  // --- Paper input placeholder ---
-  const handleSubmitPaper = (e: React.FormEvent) => {
+  const submitPaper = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
-    const newTree = {
-      id: 'seed',
-      title: `Seed Paper: ${inputValue}`,
-      authors: ['Placeholder Author'],
-      keywords: ['placeholder'],
-      summary: 'Placeholder summary — backend will fill in real data later.',
-      children: [],
-    };
-    setTrees((prev) => ({ ...prev, [activeTab]: newTree }));
+    setTrees({
+      ...trees,
+      [activeTab]: {
+        id: 'seed',
+        title: `Seed Paper: ${inputValue}`,
+        authors: ['Placeholder Author'],
+        keywords: ['placeholder'],
+        summary: 'Placeholder summary for testing.',
+        children: [],
+      },
+    });
     setInputValue('');
   };
 
   return (
     <main className="w-screen h-screen text-green-900 relative overflow-hidden bg-gradient-to-b from-green-50 to-white">
-      {/* Back */}
-      <div className="absolute top-4 left-4 z-40">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-full shadow-md transition-all"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </Link>
+      {/* === CLICKABLE UI LAYER === */}
+      <div className="relative z-[100] pointer-events-auto">
+        {/* Back */}
+        <div className="absolute top-4 left-4">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-full shadow-md transition-all"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back
+          </Link>
+        </div>
+
+        {/* Tabs */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 flex flex-wrap gap-2 justify-center">
+          {Object.keys(trees).map((key) => (
+            <div key={key} className="flex items-center bg-white rounded-full shadow px-2 py-1">
+              {editingTab === key ? (
+                <>
+                  <input
+                    className="border border-green-300 rounded-full px-2 text-sm w-28 focus:ring-1 focus:ring-green-500"
+                    value={newTabName}
+                    onChange={(e) => setNewTabName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && confirmRename(key)}
+                  />
+                  <button onClick={() => confirmRename(key)}>
+                    <Check className="w-4 h-4 text-green-600" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setActiveTab(key)}
+                    className={`px-3 py-1 rounded-full font-semibold ${
+                      activeTab === key
+                        ? 'bg-green-600 text-white'
+                        : 'bg-green-100 hover:bg-green-200 text-green-700'
+                    }`}
+                  >
+                    {tabNames[key]}
+                  </button>
+                  <button onClick={() => renameTree(key)}>
+                    <Pencil className="w-4 h-4 text-green-600" />
+                  </button>
+                  <button onClick={() => delTree(key)}>
+                    <Trash2 className="w-4 h-4 text-red-600" />
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+          <button
+            onClick={addTree}
+            disabled={Object.keys(trees).length >= 5}
+            className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-full shadow-md transition-all"
+          >
+            <Plus className="w-4 h-4" /> Add Tree
+          </button>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 flex gap-2 z-40 flex-wrap justify-center">
-        {Object.entries(trees).map(([key]) => (
-          <div key={key} className="flex items-center gap-1 bg-white rounded-full shadow px-2 py-1">
-            {editingTab === key ? (
-              <>
-                <input
-                  type="text"
-                  value={newTabName}
-                  onChange={(e) => setNewTabName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && confirmRename(key)}
-                  className="border border-green-300 rounded-full px-2 text-sm w-28 focus:outline-none focus:ring-1 focus:ring-green-500"
-                  autoFocus
-                />
-                <button onClick={() => confirmRename(key)}>
-                  <Check className="w-4 h-4 text-green-600" />
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => setActiveTab(key)}
-                  className={`px-3 py-1 rounded-full font-semibold transition-all ${
-                    activeTab === key ? 'bg-green-600 text-white' : 'bg-green-100 hover:bg-green-200 text-green-700'
-                  }`}
+      {/* === WATERING + TREE LAYERS === */}
+      <AnimatePresence>
+        {isWatering && (
+          <motion.div
+            key="watering"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+            style={{ pointerEvents: 'none' }}
+            className="absolute inset-0 z-30 flex flex-col items-center justify-center select-none"
+          >
+            <div className="flex flex-col items-center relative" style={{ pointerEvents: 'none' }}>
+              <motion.div
+                className="relative left-[-3px]"
+                initial={{ rotate: -20 }}
+                animate={{ rotate: [-20, -10, -25, -10, -20] }}
+                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                style={{ pointerEvents: 'none' }}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#166534"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="w-16 h-16 mb-2"
                 >
-                  {tabNames[key] || 'Untitled Tree'}
-                </button>
-                <button onClick={() => startRenaming(key)} title="Rename">
-                  <Pencil className="w-4 h-4 text-green-600 hover:text-green-800" />
-                </button>
-                <button onClick={() => handleDeleteTree(key)} title="Delete">
-                  <Trash2 className="w-4 h-4 text-red-600 hover:text-red-800" />
-                </button>
-              </>
-            )}
-          </div>
-        ))}
+                  <path d="M18 10V3h-3v7a3 3 0 0 1-6 0V3H6v7c0 3.31 2.69 6 6 6s6-2.69 6-6Z" />
+                  <path d="M22 19v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <line x1="2" y1="19" x2="22" y2="19" />
+                </svg>
+              </motion.div>
 
-        <button
-          onClick={handleAddTree}
-          className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-full shadow-md transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          Add Tree
-        </button>
-      </div>
+              {/* Droplets */}
+              <div className="relative h-24 w-20 pointer-events-none">
+                {[...Array(6)].map((_, i) => (
+                  <motion.div
+                    key={i}
+                    className="absolute left-1/2 w-2 h-4 bg-blue-400/80 rounded-full"
+                    style={{ transform: 'translateX(-50%)', pointerEvents: 'none' }}
+                    initial={{ y: -5, opacity: 0 }}
+                    animate={{
+                      y: [0, 35, 55],
+                      opacity: [0, 1, 0],
+                    }}
+                    transition={{
+                      duration: 1.2,
+                      repeat: Infinity,
+                      delay: i * 0.25,
+                      ease: 'easeInOut',
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
 
-      <svg ref={svgRef} className="absolute inset-0 block" />
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: [0, 1, 1, 0.85] }}
+              transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+              className="text-green-800 mt-4 text-lg font-medium"
+              style={{ pointerEvents: 'none' }}
+            >
+              Growing your tree...
+            </motion.p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Placeholder */}
+      {/* SVG Tree Canvas */}
+      <svg
+        ref={svgRef}
+        className={`absolute inset-0 block z-10 ${
+          isWatering ? 'pointer-events-none' : 'pointer-events-auto'
+        }`}
+        style={{ userSelect: 'none' }}
+      />
+
+      {/* Blank tree input */}
       {!trees[activeTab] && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center z-30">
+        <div className="absolute inset-0 flex flex-col items-center justify-center z-[80] text-center">
           <p className="text-lg text-green-800 mb-3">
             🌱 This tree is empty. Add your first research paper below.
           </p>
-          <form onSubmit={handleSubmitPaper} className="flex gap-2">
+          <form onSubmit={submitPaper} className="flex gap-2 justify-center">
             <input
               type="text"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               placeholder="Enter paper title..."
-              className="border border-green-300 rounded-lg px-3 py-2 w-80 focus:outline-none focus:ring-2 focus:ring-green-500"
+              className="border border-green-300 rounded-lg px-3 py-2 w-80 focus:ring-2 focus:ring-green-500"
             />
             <button
               type="submit"
-              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-all"
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
             >
               Add Paper
             </button>
@@ -437,7 +504,7 @@ export default function VisualizePage() {
         </div>
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar Drawer */}
       <AnimatePresence>
         {popupNode && (
           <motion.div
@@ -446,7 +513,7 @@ export default function VisualizePage() {
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ duration: 0.4, ease: 'easeOut' }}
-            className="fixed top-0 right-0 h-full w-[420px] bg-white border-l border-green-200 shadow-2xl z-50 flex flex-col"
+            className="fixed top-0 right-0 h-full w-[420px] bg-white border-l border-green-200 shadow-2xl z-[120] flex flex-col"
           >
             <div className="flex justify-between items-center p-6 border-b border-green-100 bg-green-50">
               <h2 className="text-2xl font-semibold text-green-800">{popupNode.title}</h2>
@@ -457,10 +524,10 @@ export default function VisualizePage() {
 
             <motion.div
               key={popupNode.id}
-              initial={{ opacity: 0, x: 20, scale: 0.98 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: -20, scale: 0.98 }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.25 }}
               className="p-6 overflow-y-auto flex-1"
             >
               <p className="text-sm text-green-600 mb-3">
@@ -471,12 +538,14 @@ export default function VisualizePage() {
                 <div
                   className="bg-green-50 border border-green-100 rounded p-2 mt-1"
                   dangerouslySetInnerHTML={{
-                    __html: hljs.highlight(popupNode.summary, { language: 'plaintext' }).value,
+                    __html: hljs.highlight(popupNode.summary, {
+                      language: 'plaintext',
+                    }).value,
                   }}
                 />
               </div>
               <div className="text-sm text-green-700">
-                <strong>Keywords / Similarities:</strong>
+                <strong>Keywords:</strong>
                 <ul className="list-disc ml-5 mt-1">
                   {popupNode.keywords.map((kw: string, i: number) => (
                     <li key={i}>{kw}</li>
