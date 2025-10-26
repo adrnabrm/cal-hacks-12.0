@@ -15,7 +15,7 @@ try {
   const app = express();
   const port = process.env.PORT || 8000;
 
-  // 🧩 CORS for local dev (with credentials for Supabase auth)
+  // 🧩 Enable CORS for local dev
   app.use(
     cors({
       origin: ["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -23,9 +23,8 @@ try {
     })
   );
   app.use(express.json());
-  //app.options("*", cors()); // handle preflight
 
-  // 🧠 Public route — test Bright Data agent manually
+  // 🧠 Public route — manual Bright Data test
   app.get("/agent", async (req, res) => {
     try {
       const q = req.query.q || "latest AI developments 2025";
@@ -37,7 +36,7 @@ try {
     }
   });
 
-  // 🌳 Create a new tree for the authenticated user
+  // 🌳 Create a new research tree
   app.post("/api/trees", requireAuth, async (req, res) => {
     const { prompt } = req.body;
     const user = req.user;
@@ -91,7 +90,7 @@ try {
     }
   });
 
-  // 🌱 POST /api/trees/:id/seed — run Bright Data agent + create root node + children
+  // 🌱 POST /api/trees/:id/seed — run Bright Data + insert root/children
   app.post("/api/trees/:id/seed", requireAuth, async (req, res) => {
     const treeId = req.params.id;
     const { prompt } = req.body;
@@ -109,14 +108,18 @@ try {
 
       // 2️⃣ Run Bright Data workflow
       const workflowResult = await runWorkflow(prompt, { maxResults: 10 });
+      const sources = workflowResult?.sources || [];
 
-      // 3️⃣ Insert a root node
+      // 3️⃣ Insert root node
       const { data: rootNode, error: rootErr } = await supabase
         .from("nodes")
         .insert({
           tree_id: treeId,
-          title: prompt,
-          summary: `Seed prompt: ${prompt}`,
+          results_json: {
+            title: prompt,
+            summary: `Seed prompt: ${prompt}`,
+            status: "seed",
+          },
           section: "root",
           created_at: new Date(),
         })
@@ -124,14 +127,21 @@ try {
         .single();
       if (rootErr) throw rootErr;
 
-      // 4️⃣ Map and insert children
-      const sources = workflowResult?.sources || [];
+      // 4️⃣ Insert children (each source becomes a node)
       const childrenToInsert = sources.map((s) => ({
         tree_id: treeId,
-        parent_id: rootNode.id,
-        title: s.title || s.domain || "Untitled",
-        summary: s.summary || "",
-        md_path: s.md_path || null,
+        parent_node_id: rootNode.id,
+        results_json: {
+          title: s.title || s.domain || "Untitled",
+          domain: s.domain || null,
+          url: s.url || null,
+          snippet: s.snippet || null,
+          summary: s.summary || "",
+          status: s.status || "success",
+        },
+        md_file_path: s.md_path || null,
+        embedding_id: s.embedding_id ? [s.embedding_id] : null,
+        vectorized: s.vectorized ?? true,
         section: "overview",
         created_at: new Date(),
       }));
@@ -143,7 +153,7 @@ try {
         if (insertErr) throw insertErr;
       }
 
-      // 5️⃣ Return nested result
+      // 5️⃣ Return root + children to frontend
       res.json({
         ok: true,
         treeRoot: {
@@ -157,7 +167,7 @@ try {
     }
   });
 
-  // 🌿 POST /api/nodes/:nodeId/expand — expand a node by section
+  // 🌿 POST /api/nodes/:nodeId/expand — expand node by section
   app.post("/api/nodes/:nodeId/expand", requireAuth, async (req, res) => {
     const nodeId = req.params.nodeId;
     const { section } = req.body;
@@ -171,18 +181,26 @@ try {
         .single();
       if (parentErr) throw parentErr;
 
-      // 2️⃣ Run agent again, seeded with parent info + section
-      const expandPrompt = `${parentNode.title} — expand section: ${section}`;
+      // 2️⃣ Run Bright Data again for expansion
+      const expandPrompt = `${parentNode.results_json?.title || "Paper"} — expand section: ${section}`;
       const workflowResult = await runWorkflow(expandPrompt, { maxResults: 6 });
       const sources = workflowResult?.sources || [];
 
-      // 3️⃣ Insert children under this node
+      // 3️⃣ Insert children
       const children = sources.map((s) => ({
         tree_id: parentNode.tree_id,
-        parent_id: nodeId,
-        title: s.title || s.domain || "Untitled",
-        summary: s.summary || "",
-        md_path: s.md_path || null,
+        parent_node_id: nodeId,
+        results_json: {
+          title: s.title || s.domain || "Untitled",
+          domain: s.domain || null,
+          url: s.url || null,
+          snippet: s.snippet || null,
+          summary: s.summary || "",
+          status: s.status || "success",
+        },
+        md_file_path: s.md_path || null,
+        embedding_id: s.embedding_id ? [s.embedding_id] : null,
+        vectorized: s.vectorized ?? true,
         section,
         created_at: new Date(),
       }));
@@ -201,7 +219,7 @@ try {
     }
   });
 
-  // 💬 RAG endpoint — query vector DB + Gemini for contextual answer
+  // 💬 RAG endpoint — query Chroma Cloud for contextual answers
   app.post("/api/rag", async (req, res) => {
     try {
       const { query } = req.body;
@@ -273,9 +291,7 @@ try {
     res.send("Backend running. Try /agent?q=... or POST /api/trees")
   );
 
-  app.listen(port, () =>
-    console.log(`✅ Backend listening on :${port}`)
-  );
+  app.listen(port, () => console.log(`✅ Backend listening on :${port}`));
 } catch (error) {
   console.error("❌ Fatal error during startup:", error);
   process.exit(1);
