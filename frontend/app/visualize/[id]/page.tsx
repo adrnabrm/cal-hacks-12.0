@@ -36,32 +36,30 @@ export default function VisualizePage() {
           data: { session },
         } = await supabase.auth.getSession();
         const token = session?.access_token;
-
         if (!token) throw new Error('User not authenticated');
 
         const res = await fetch(`${API_BASE}/api/trees/${id}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         });
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-
         if (!data.ok) throw new Error(data.error);
 
         setTreeName(data.tree.title || 'Research Tree');
 
-        // Build nested structure from flat node list
+        // 🧠 Build nested structure from flat nodes
         const nodes = data.nodes || [];
         const nodeMap: Record<string, TreeNode> = {};
         nodes.forEach((n: any) => (nodeMap[n.id] = { ...n, children: [] }));
+
         nodes.forEach((n: any) => {
-          if (n.parent_id && nodeMap[n.parent_id]) {
-            nodeMap[n.parent_id].children!.push(nodeMap[n.id]);
+          if (n.parent_node_id && nodeMap[n.parent_node_id]) {
+            nodeMap[n.parent_node_id].children!.push(nodeMap[n.id]);
           }
         });
-        const root = nodes.find((n: any) => !n.parent_id);
+
+        const root = nodes.find((n: any) => !n.parent_node_id);
         setTreeData(root ? nodeMap[root.id] : null);
       } catch (e) {
         console.error('Fetch tree failed:', e);
@@ -76,10 +74,10 @@ export default function VisualizePage() {
     setIsWatering(true);
     setTreeData({
       id: 'seed',
-      title: `Seeding: ${prompt}`,
-      summary: 'Generating initial research tree…',
-      authors: [],
-      keywords: [],
+      results_json: {
+        title: `Seeding: ${prompt}`,
+        summary: 'Generating initial research tree…',
+      },
       children: [],
     });
 
@@ -94,7 +92,7 @@ export default function VisualizePage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`, // ✅ attach token
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ prompt }),
       });
@@ -111,7 +109,15 @@ export default function VisualizePage() {
       setIsWatering(false);
       setAwaitingChildrenDraw(false);
       setTreeData((prev) =>
-        prev ? { ...prev, summary: 'Error seeding tree.' } : prev
+        prev
+          ? {
+              ...prev,
+              results_json: {
+                ...(prev.results_json || {}),
+                summary: 'Error seeding tree.',
+              },
+            }
+          : prev
       );
     }
   };
@@ -130,7 +136,7 @@ export default function VisualizePage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`, // ✅ attach token
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ section }),
       });
@@ -141,17 +147,12 @@ export default function VisualizePage() {
 
       const newChildren: TreeNode[] = data.children || [];
 
+      // Recursively attach new children to parent
       const attachChildren = (node: TreeNode): TreeNode => {
         if (node.id === nodeId) {
-          return {
-            ...node,
-            children: [...(node.children || []), ...newChildren],
-          };
+          return { ...node, children: [...(node.children || []), ...newChildren] };
         }
-        return {
-          ...node,
-          children: (node.children || []).map(attachChildren),
-        };
+        return { ...node, children: (node.children || []).map(attachChildren) };
       };
 
       setTreeData((prev) => (prev ? attachChildren(prev) : prev));
@@ -164,7 +165,7 @@ export default function VisualizePage() {
     }
   };
 
-  // 🗑️ 4️⃣ Delete the tree (redirect only for now)
+  // 🗑️ 4️⃣ Delete tree (redirect only for now)
   const handleDelete = async () => {
     if (confirm(`Delete ${treeName}?`)) {
       router.push('/library');
