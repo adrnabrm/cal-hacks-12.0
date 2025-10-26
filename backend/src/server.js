@@ -1,5 +1,5 @@
 import express from "express";
-import { runWorkflow } from "./agents/main_workflow.js";
+import { runWorkflow } from "./agents/bright_data_agent.js";
 
 const app = express()
 const port = process.env.PORT || 8000; // define env port or use fallback 8000 port
