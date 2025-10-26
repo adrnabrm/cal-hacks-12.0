@@ -1,6 +1,6 @@
 // src/server.js
 import express from "express";
-import { runWorkflow } from "./main_workflow.js";
+import { runWorkflow } from "./agents/bright_data_agent.js";
 
 const app = express();
 const port = process.env.PORT || 8000;
