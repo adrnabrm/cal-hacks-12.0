@@ -6,77 +6,72 @@ import hljs from 'highlight.js';
 import 'highlight.js/styles/github.css';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, X } from 'lucide-react';
+import { ArrowLeft, X, Plus, Trash2, Pencil, Check } from 'lucide-react';
 
-// Mock dataset
-const data = {
-  id: 'seed',
+// --- Example Tree ---
+const exampleTree = {
+  id: 'seed1',
   title: 'Seed Paper: Climate Change Impact',
   authors: ['Dr. Jane Doe', 'Prof. Alan White'],
   keywords: ['climate change', 'temperature rise', 'carbon emissions'],
   summary:
-    'This foundational study explores global patterns of temperature rise and its correlation with emission trends across continents.',
+    'Explores global patterns of temperature rise and its correlation with emission trends across continents.',
   children: [
     {
       id: 'a',
       title: 'Paper A: Carbon Emission Trends',
-      authors: ['Dr. Sam Green', 'Dr. Naomi Clarke'],
-      keywords: ['carbon trends', 'urban data', 'industrial emissions'],
-      summary:
-        'Analyzes carbon emissions from 2000–2020, highlighting industrial and urban CO₂ output patterns, and policy effectiveness.',
+      authors: ['Sam Green'],
+      keywords: ['carbon'],
+      summary: 'Emission trend analysis.',
       children: [
-        {
-          id: 'a1',
-          title: 'Study A1: Urban Emission Analysis',
-          authors: ['L. Wong', 'M. Patel'],
-          keywords: ['urban emission', 'megacities', 'transport'],
-          summary:
-            'Evaluates city-level CO₂ emissions, correlating transport activity and energy consumption with air quality shifts.',
-        },
-        {
-          id: 'a2',
-          title: 'Study A2: Global Emission Policies',
-          authors: ['K. Lee', 'S. Ahmed'],
-          keywords: ['emission policy', 'global metrics', 'data modeling'],
-          summary:
-            'Analyzes global emission policy effectiveness using data-driven modeling and regional comparison.',
-        },
+        { id: 'a1', title: 'Paper C: Renewable Models', authors: ['Clara Sun'], keywords: ['modeling'], summary: 'Simulation improvements.' },
+        { id: 'a2', title: 'Paper D: Global Policies', authors: ['Mark Liu'], keywords: ['policy'], summary: 'Policy framework evaluations.' },
+        { id: 'a3', title: 'Paper E: Urban Studies', authors: ['Anna Reyes'], keywords: ['urban'], summary: 'City emission analysis.' },
+        { id: 'a4', title: 'Paper F: Climate Metrics', authors: ['Leo Tan'], keywords: ['metrics'], summary: 'Environmental measurement techniques.' },
+        { id: 'a5', title: 'Paper G: Carbon Capture', authors: ['Kai Zhang'], keywords: ['capture'], summary: 'Carbon capture innovations.' },
       ],
     },
     {
       id: 'b',
-      title: 'Paper B: Renewable Energy Growth',
-      authors: ['Dr. Clara Sun', 'R. Osei'],
-      keywords: ['renewable energy', 'solar power', 'hydroelectric'],
-      summary:
-        'Investigates renewable adoption globally, tracking solar, wind, and hydro growth from 2010–2025, highlighting economic transitions.',
-    },
-    {
-      id: 'c',
-      title: 'Paper C: Ocean Carbon Cycle Studies',
-      authors: ['Dr. Li Fang', 'A. Santos'],
-      keywords: ['carbon cycle', 'oceanography', 'climate modeling'],
-      summary:
-        'Explores how the ocean acts as a major carbon sink and its response to global temperature changes.',
-    },
-    {
-      id: 'd',
-      title: 'Paper D: Atmospheric Methane Analysis',
-      authors: ['Dr. R. Singh', 'C. Garcia'],
-      keywords: ['methane', 'atmosphere', 'greenhouse gases'],
-      summary:
-        'Examines methane’s role in global warming, focusing on atmospheric measurement methods and mitigation approaches.',
+      title: 'Paper B: Climate Modeling Innovations',
+      authors: ['Clara Sun'],
+      keywords: ['modeling'],
+      summary: 'Simulation improvements.',
+      children: [
+        {
+          id: 'b1',
+          title: 'Paper C: Ocean Temperature Data',
+          authors: ['L. Chen'],
+          keywords: ['data', 'temperature'],
+          summary: 'Analyzing temperature datasets.',
+        },
+      ],
     },
   ],
 };
 
 export default function VisualizePage() {
   const svgRef = useRef<SVGSVGElement | null>(null);
+
+  const [trees, setTrees] = useState<Record<string, any>>({
+    new_tree: null,
+    example_tree: exampleTree,
+  });
+  const [tabNames, setTabNames] = useState<Record<string, string>>({
+    new_tree: 'New Tree',
+    example_tree: 'Example Tree',
+  });
+  const [activeTab, setActiveTab] = useState('new_tree');
   const [popupNode, setPopupNode] = useState<any | null>(null);
+  const [inputValue, setInputValue] = useState('');
+  const [editingTab, setEditingTab] = useState<string | null>(null);
+  const [newTabName, setNewTabName] = useState('');
+  const [isWatering, setIsWatering] = useState(false);
+  const [renderedTabs, setRenderedTabs] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
+  // --- Draw Tree ---
+  const drawTree = (tabId: string, data: any, firstTime: boolean) => {
     if (!svgRef.current) return;
-
     const width = window.innerWidth;
     const height = window.innerHeight;
 
@@ -84,306 +79,525 @@ export default function VisualizePage() {
       .select(svgRef.current)
       .attr('width', width)
       .attr('height', height)
-      .style('cursor', 'grab')
       .style('background', 'linear-gradient(to top, #ecfdf5, #f0fdf4)');
     svg.selectAll('*').remove();
 
-    const g = svg.append('g').attr('class', 'zoom-group');
-    const treeGroup = g.append('g').attr('class', 'tree-group');
+    const g = svg.append('g');
+    const treeGroup = g.append('g');
 
-    // Zoom + pan
     const zoom = d3
       .zoom()
-      .scaleExtent([0.6, 2])
+      .scaleExtent([0.3, 5])
       .translateExtent([
-        [0, -100],
-        [width, height - 120],
+        [-width * 2, -height * 2],
+        [width * 3, height * 3],
       ])
       .on('zoom', (e) => g.attr('transform', e.transform));
     svg.call(zoom);
 
-    // --- Tree layout
-    const root = d3.hierarchy(data);
-    // more vertical room so depths are clearly separated
-    // Tree layout with more vertical room between siblings
-const treeLayout = d3.tree().nodeSize([240, 220]);
-treeLayout(root);
-
-// Apply small random Y-offsets to leaf nodes for a natural look
-root.descendants().forEach((d: any) => {
-  if (!d.children) {
-    d.y += Math.random() * 40 - 20; // ±20px asymmetry
-  }
-});
-
-
     const seedY = height - 100;
     const seedX = width / 2;
 
-    // --- Ground
+    // --- Soil / Ground ---
     const defs = svg.append('defs');
-    const gradient = defs
+    const grad = defs
       .append('linearGradient')
       .attr('id', 'soil-gradient')
       .attr('x1', '0%')
       .attr('y1', '0%')
       .attr('x2', '0%')
       .attr('y2', '100%');
-    gradient.append('stop').attr('offset', '0%').attr('stop-color', '#a16207').attr('stop-opacity', 0.4);
-    gradient.append('stop').attr('offset', '100%').attr('stop-color', '#451a03').attr('stop-opacity', 0.8);
+    grad.append('stop').attr('offset', '0%').attr('stop-color', '#a16207').attr('stop-opacity', 0.4);
+    grad.append('stop').attr('offset', '100%').attr('stop-color', '#451a03').attr('stop-opacity', 0.8);
 
-    const hillWidth = 800;
-    const hillDepth = 120;
-    const ground = treeGroup.append('g');
     const hillPath = d3
       .line()
       .curve(d3.curveCatmullRom.alpha(0.5))([
-        [seedX - hillWidth / 2, seedY],
-        [seedX - hillWidth / 3, seedY - 25],
+        [seedX - 400, seedY],
+        [seedX - 200, seedY - 25],
         [seedX, seedY - 35],
-        [seedX + hillWidth / 3, seedY - 25],
-        [seedX + hillWidth / 2, seedY],
+        [seedX + 200, seedY - 25],
+        [seedX + 400, seedY],
       ]);
 
+    const ground = treeGroup.append('g');
     ground
       .append('path')
-      .attr(
-        'd',
-        `${hillPath}
-         L ${seedX + hillWidth / 2}, ${seedY + hillDepth}
-         Q ${seedX}, ${seedY + hillDepth + 40}, ${seedX - hillWidth / 2}, ${seedY + hillDepth}
-         Z`
-      )
-      .attr('fill', 'url(#soil-gradient)')
-      .attr('opacity', 0)
-      .transition()
-      .duration(1000)
-      .attr('opacity', 1);
-
+      .attr('d', `${hillPath} L ${seedX + 400}, ${seedY + 120} Q ${seedX}, ${seedY + 160}, ${seedX - 400}, ${seedY + 120} Z`)
+      .attr('fill', 'url(#soil-gradient)');
     ground
       .append('path')
       .attr('d', hillPath)
       .attr('fill', 'none')
       .attr('stroke', '#78350f')
-      .attr('stroke-width', 6)
-      .attr('stroke-linecap', 'round');
+      .attr('stroke-width', 6);
 
-    // Stem
     const stem = ground
       .append('line')
       .attr('x1', seedX)
       .attr('x2', seedX)
       .attr('y1', seedY)
-      .attr('y2', seedY)
+      .attr('y2', firstTime ? seedY : seedY - 60)
       .attr('stroke', '#166534')
       .attr('stroke-width', 4)
       .attr('stroke-linecap', 'round');
+    if (firstTime) stem.transition().duration(1000).attr('y2', seedY - 60);
 
-    stem.transition().delay(800).duration(1000).attr('y2', seedY - 60);
+    if (!data) return;
 
-    // --- Links & Nodes containers
-    const linkGroup = treeGroup.append('g').attr('class', 'links');
-    const nodeGroup = treeGroup.append('g').attr('class', 'nodes');
+    const root = d3.hierarchy(data);
+    const layout = d3.tree().nodeSize([240, 220]);
+    layout(root);
 
-    // Bézier link generator (coordinates consistent with node transforms)
-    const bezierLink = (d: any) => {
-      const radius = 25;
-      const sx = d.source.x + seedX;
-      const sy = seedY - d.source.y + (d.source.depth === 0 ? radius : 0);
-      const tx = d.target.x + seedX;
-      const ty = seedY - d.target.y - radius;
+    const linkGroup = treeGroup.append('g');
+    const nodeGroup = treeGroup.append('g');
+
+    const bezier = (d: any) => {
+      const sx = d.source.x + seedX,
+        sy = seedY - d.source.y,
+        tx = d.target.x + seedX,
+        ty = seedY - d.target.y;
       const midY = (sy + ty) / 2;
-      const siblingOffset = (d.target.x - d.source.x) * 0.3; // nicer spread for many children
-      return `M${sx},${sy} C${sx + siblingOffset},${midY} ${tx - siblingOffset},${midY} ${tx},${ty}`;
+      return `M${sx},${sy} C${sx},${midY} ${tx},${midY} ${tx},${ty}`;
     };
 
-    // Create links at their final shape first, then animate with true length
+    // --- Animate Branches ---
     const links = linkGroup
-      .selectAll('path.link')
-      .data(root.links(), (l: any) => `${l.source.data.id}->${l.target.data.id}`)
+      .selectAll('path')
+      .data(root.links())
       .enter()
       .append('path')
-      .attr('class', 'link')
       .attr('fill', 'none')
       .attr('stroke', '#16a34a')
       .attr('stroke-width', 2)
-      .attr('d', (d: any) => bezierLink(d))
-      .attr('opacity', 1)
-      .each(function () {
-        // compute per-path length -> correct, non-chopped animation
-        const len = (this as SVGPathElement).getTotalLength();
-        d3.select(this)
-          .attr('stroke-dasharray', `${len} ${len}`)
-          .attr('stroke-dashoffset', len);
-      })
-      .transition()
-      .delay((_, i) => 900 + i * 150)
-      .duration(900)
-      .attr('stroke-dashoffset', 0);
+      .attr('stroke-linecap', 'round')
+      .attr('d', (d) => {
+        const sx = d.source.x + seedX,
+          sy = seedY - d.source.y;
+        return `M${sx},${sy}C${sx},${sy} ${sx},${sy} ${sx},${sy}`;
+      });
 
-    // Nodes
+    if (firstTime) {
+      links
+        .transition()
+        .delay((_, i) => i * 150)
+        .duration(700)
+        .attrTween('d', function (d) {
+          const sx = d.source.x + seedX,
+            sy = seedY - d.source.y,
+            tx = d.target.x + seedX,
+            ty = seedY - d.target.y;
+          const midY = (sy + ty) / 2;
+          const interp = d3.interpolateNumber(0, 1);
+          return function (t) {
+            const p = interp(t);
+            const cx1 = sx;
+            const cy1 = sy + (midY - sy) * p;
+            const cx2 = tx;
+            const cy2 = ty - (ty - midY) * (1 - p);
+            const x = sx + (tx - sx) * p;
+            const y = sy + (ty - sy) * p;
+            return `M${sx},${sy} C${cx1},${cy1} ${cx2},${cy2} ${x},${y}`;
+          };
+        });
+    } else {
+      links.attr('d', (d) => bezier(d));
+    }
+
+    // --- Nodes ---
     const nodes = nodeGroup
-      .selectAll('g.node')
-      .data(root.descendants(), (d: any) => d.data.id)
+      .selectAll('g')
+      .data(root.descendants())
       .enter()
       .append('g')
-      .attr('class', 'node')
-      .attr('transform', (d) => `translate(${d.x + seedX}, ${seedY - 60})`)
-      .style('opacity', 0);
-
-    nodes
-      .transition()
-      .delay((_, i) => 1100 + i * 200)
-      .duration(600)
-      .style('opacity', 1)
-      .attr('transform', (d) => `translate(${d.x + seedX}, ${seedY - d.y})`);
-
-    nodes
-      .append('circle')
-      .attr('r', 0)
-      .attr('fill', (d: any) => (d.children ? '#22c55e' : '#bbf7d0'))
-      .attr('stroke', '#166534')
-      .attr('stroke-width', 2)
-      .transition()
-      .delay((_, i) => 1200 + i * 200)
-      .duration(500)
-      .attr('r', (d: any) => (d.depth === 0 ? 30 : 25));
-
-    // Title boxes above nodes
-    const labelGroups = nodes.append('g').attr('class', 'label-group').attr('transform', 'translate(0, -45)');
-    labelGroups.each(function (d: any) {
-  const group = d3.select(this);
-  const title = d.data.title;
-
-  // measure text width dynamically
-  const temp = group
-    .append('text')
-    .attr('font-size', 13)
-    .attr('font-weight', 600)
-    .attr('font-family', '"Georgia", "Times New Roman", serif')
-    .text(title);
-  const width = (temp.node() as SVGTextElement).getBBox().width + 20;
-  temp.remove();
-
-  // Prevent title boxes from overlapping siblings horizontally
-  // If two siblings are too close, shift text slightly left/right
-  const siblings = d.parent?.children || [];
-  if (siblings.length > 1) {
-    const index = siblings.indexOf(d);
-    const offset = (index - (siblings.length - 1) / 2) * 15; // spread text horizontally
-    group.attr('transform', `translate(${offset}, -45)`);
-  } else {
-    group.attr('transform', 'translate(0, -45)');
-  }
-
-  // background rect
-  group
-    .append('rect')
-    .attr('x', -width / 2)
-    .attr('y', -15)
-    .attr('width', width)
-    .attr('height', 28)
-    .attr('rx', 8)
-    .attr('fill', 'white')
-    .attr('opacity', 0.9)
-    .attr('stroke', '#bbf7d0')
-    .attr('stroke-width', 1.5);
-
-  // text label
-  group
-    .append('text')
-    .attr('text-anchor', 'middle')
-    .attr('font-size', 13)
-    .attr('font-weight', 600)
-    .attr('fill', '#166534')
-    .attr('font-family', '"Georgia", "Times New Roman", serif')
-    .attr('dy', 5)
-    .text(title);
-});
-
-
-    // Interactions
-    nodes
-      .on('mouseover', function () {
-        d3.select(this).select('circle').transition().duration(150).attr('r', 30).attr('fill', '#86efac');
-      })
-      .on('mouseout', function (e, d: any) {
-        d3.select(this)
-          .select('circle')
-          .transition()
-          .duration(150)
-          .attr('r', (d: any) => (d.depth === 0 ? 30 : 25))
-          .attr('fill', d.children ? '#22c55e' : '#bbf7d0');
-      })
+      .attr('transform', (d) => `translate(${d.x + seedX},${seedY - d.y})`)
       .on('click', (_, d: any) => setPopupNode(d.data));
 
-    // --- Nodes are fixed; disable dragging ---
-    interact('.node').draggable(false);
+    if (firstTime) {
+      let done = 0;
+      const total = root.descendants().length;
+      setIsWatering(true);
 
-  }, []);
+      nodes
+        .append('circle')
+        .attr('r', 0)
+        .attr('fill', (d: any) => (d.children ? '#22c55e' : '#bbf7d0'))
+        .attr('stroke', '#166534')
+        .attr('stroke-width', 2)
+        .transition()
+        .delay((_, i) => 300 + i * 150)
+        .duration(500)
+        .attr('r', (d: any) => (d.depth === 0 ? 30 : 25))
+        .on('end', () => {
+          done++;
+          if (done === total) {
+            setIsWatering(false);
+            setRenderedTabs((prev) => new Set(prev).add(tabId));
+          }
+        });
+    } else {
+      nodes
+        .append('circle')
+        .attr('r', (d: any) => (d.depth === 0 ? 30 : 25))
+        .attr('fill', (d: any) => (d.children ? '#22c55e' : '#bbf7d0'))
+        .attr('stroke', '#166534')
+        .attr('stroke-width', 2);
+    }
+
+    // --- Labels Fade In After Node Growth ---
+    const labels = nodes.append('g').attr('transform', 'translate(0,-45)');
+    labels.each(function (d: any, i) {
+      const g = d3.select(this);
+      const t = g.append('text').text(d.data.title).attr('font-size', 13).attr('font-weight', 600);
+      const w = (t.node() as SVGTextElement).getBBox().width + 20;
+      t.remove();
+
+      const box = g
+        .append('rect')
+        .attr('x', -w / 2)
+        .attr('y', -15)
+        .attr('width', w)
+        .attr('height', 28)
+        .attr('rx', 8)
+        .attr('fill', 'white')
+        .attr('opacity', firstTime ? 0 : 0.9);
+
+      const text = g
+        .append('text')
+        .attr('text-anchor', 'middle')
+        .attr('font-size', 13)
+        .attr('font-weight', 600)
+        .attr('fill', '#166534')
+        .attr('dy', 5)
+        .attr('opacity', firstTime ? 0 : 1)
+        .text(d.data.title);
+
+      if (firstTime) {
+        box
+          .transition()
+          .delay(800 + i * 150)
+          .duration(400)
+          .attr('opacity', 0.9);
+        text
+          .transition()
+          .delay(850 + i * 150)
+          .duration(400)
+          .attr('opacity', 1)
+          .attr('transform', 'translate(0,-5)');
+      }
+    });
+  };
+
+
+  // --- Lifecycle ---
+  useEffect(() => {
+    setPopupNode(null);
+    const firstTime = !renderedTabs.has(activeTab);
+    drawTree(activeTab, trees[activeTab], firstTime);
+  }, [activeTab, trees]);
+
+  // --- Tab handlers ---
+  const addTree = () => {
+    setTrees((prevTrees) => {
+      const treeCount = Object.keys(prevTrees).length;
+
+      // If max limit reached
+      if (treeCount >= 5) {
+        // Always show the alert on the next tick so it doesn’t get swallowed
+        setTimeout(() => {
+          alert('🌳 You’ve reached the maximum of 5 trees. Please delete one before adding another.');
+        }, 0);
+        return prevTrees; // Don't change anything
+      }
+
+      // Otherwise, safely create a new tree
+      const id = `tree_${Date.now()}`;
+      const name = `Tree ${treeCount + 1}`;
+
+      setTabNames((prevNames) => ({ ...prevNames, [id]: name }));
+      setActiveTab(id);
+
+      return { ...prevTrees, [id]: null };
+    });
+  };
+
+  const delTree = (id: string) => {
+    if (!confirm(`Delete ${tabNames[id]}?`)) return;
+    const newTrees = { ...trees };
+    const newNames = { ...tabNames };
+    delete newTrees[id];
+    delete newNames[id];
+    setTrees(newTrees);
+    setTabNames(newNames);
+    setRenderedTabs((p) => {
+      const n = new Set(p);
+      n.delete(id);
+      return n;
+    });
+    setActiveTab(Object.keys(newTrees)[0]);
+  };
+  const renameTree = (id: string) => {
+    setEditingTab(id);
+    setNewTabName(tabNames[id]);
+  };
+  const confirmRename = (id: string) => {
+    setTabNames({ ...tabNames, [id]: newTabName || tabNames[id] });
+    setEditingTab(null);
+  };
+
+  const submitPaper = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputValue.trim()) return;
+
+    // Determine whether we need to create a new tab first
+    const existingKeys = Object.keys(trees);
+    let newTrees = { ...trees };
+    let newNames = { ...tabNames };
+    let currentTab = activeTab;
+
+    // If there are no existing trees or the active one is missing, make a new tab
+    if (existingKeys.length === 0 || !newTrees[currentTab]) {
+      const newId = `tree_${Date.now()}`;
+      const nextNumber = Object.keys(newNames).length + 1;
+      newTrees = { ...newTrees, [newId]: null };
+      newNames = { ...newNames, [newId]: `Tree ${nextNumber}` };
+      currentTab = newId;
+      setActiveTab(newId);
+    }
+
+    // Create the seed paper tree in the active or newly created tab
+    setTrees({
+      ...newTrees,
+      [currentTab]: {
+        id: 'seed',
+        title: `Seed Paper: ${inputValue}`,
+        authors: ['Placeholder Author'],
+        keywords: ['placeholder'],
+        summary: 'Placeholder summary for testing.',
+        children: [],
+      },
+    });
+
+    setTabNames(newNames);
+    setInputValue('');
+  };
 
   return (
     <main className="w-screen h-screen text-green-900 relative overflow-hidden bg-gradient-to-b from-green-50 to-white">
-      {/* Back */}
-      <div className="absolute top-4 left-4 z-40">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-full shadow-md transition-all"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </Link>
+      {/* === CLICKABLE UI LAYER === */}
+      <div className="relative z-[100] pointer-events-auto">
+        {/* Back */}
+        <div className="absolute top-4 left-4">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-full shadow-md transition-all"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back
+          </Link>
+        </div>
+
+        {/* Tabs */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 flex flex-wrap gap-2 justify-center">
+          {Object.keys(trees).map((key) => (
+            <div key={key} className="flex items-center bg-white rounded-full shadow px-2 py-1">
+              {editingTab === key ? (
+                <>
+                  <input
+                    className="border border-green-300 rounded-full px-2 text-sm w-28 focus:ring-1 focus:ring-green-500"
+                    value={newTabName}
+                    onChange={(e) => setNewTabName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && confirmRename(key)}
+                  />
+                  <button onClick={() => confirmRename(key)}>
+                    <Check className="w-4 h-4 text-green-600" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setActiveTab(key)}
+                    className={`px-3 py-1 rounded-full font-semibold ${
+                      activeTab === key
+                        ? 'bg-green-600 text-white'
+                        : 'bg-green-100 hover:bg-green-200 text-green-700'
+                    }`}
+                  >
+                    {tabNames[key]}
+                  </button>
+                  <button onClick={() => renameTree(key)}>
+                    <Pencil className="w-4 h-4 text-green-600" />
+                  </button>
+                  <button onClick={() => delTree(key)}>
+                    <Trash2 className="w-4 h-4 text-red-600" />
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+          <button
+            onClick={addTree}
+            disabled={Object.keys(trees).length >= 5}
+            className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-full shadow-md transition-all"
+          >
+            <Plus className="w-4 h-4" /> Add Tree
+          </button>
+        </div>
       </div>
 
-      {/* Tree */}
-      <motion.div
-        animate={{ x: popupNode ? -150 : 0 }}
-        transition={{ duration: 0.4, ease: 'easeOut' }}
-        className="absolute inset-0"
-      >
-        <svg ref={svgRef}></svg>
-      </motion.div>
+      {/* === WATERING + TREE LAYERS === */}
+      <AnimatePresence>
+        {isWatering && (
+          <motion.div
+            key="watering"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+            style={{ pointerEvents: 'none' }}
+            className="absolute inset-0 z-30 flex flex-col items-center justify-center select-none"
+          >
+            <div className="flex flex-col items-center relative" style={{ pointerEvents: 'none' }}>
+              <motion.div
+                className="relative left-[-3px]"
+                initial={{ rotate: -20 }}
+                animate={{ rotate: [-20, -10, -25, -10, -20] }}
+                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                style={{ pointerEvents: 'none' }}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#166534"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="w-16 h-16 mb-2"
+                >
+                  <path d="M18 10V3h-3v7a3 3 0 0 1-6 0V3H6v7c0 3.31 2.69 6 6 6s6-2.69 6-6Z" />
+                  <path d="M22 19v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <line x1="2" y1="19" x2="22" y2="19" />
+                </svg>
+              </motion.div>
 
-      {/* Popup */}
+              {/* Droplets */}
+              <div className="relative h-24 w-20 pointer-events-none">
+                {[...Array(6)].map((_, i) => (
+                  <motion.div
+                    key={i}
+                    className="absolute left-1/2 w-2 h-4 bg-blue-400/80 rounded-full"
+                    style={{ transform: 'translateX(-50%)', pointerEvents: 'none' }}
+                    initial={{ y: -5, opacity: 0 }}
+                    animate={{
+                      y: [0, 35, 55],
+                      opacity: [0, 1, 0],
+                    }}
+                    transition={{
+                      duration: 1.2,
+                      repeat: Infinity,
+                      delay: i * 0.25,
+                      ease: 'easeInOut',
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: [0, 1, 1, 0.85] }}
+              transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+              className="text-green-800 mt-4 text-lg font-medium"
+              style={{ pointerEvents: 'none' }}
+            >
+              Growing your tree...
+            </motion.p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* SVG Tree Canvas */}
+      <svg
+        ref={svgRef}
+        className={`absolute inset-0 block z-10 ${
+          isWatering ? 'pointer-events-none' : 'pointer-events-auto'
+        }`}
+        style={{ userSelect: 'none' }}
+      />
+
+      {/* Blank tree input */}
+      {!trees[activeTab] && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center z-[80] text-center">
+          <p className="text-lg text-green-800 mb-3">
+            🌱 This tree is empty. Add your first research paper below.
+          </p>
+          <form onSubmit={submitPaper} className="flex gap-2 justify-center">
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="Enter paper title..."
+              className="border border-green-300 rounded-lg px-3 py-2 w-80 focus:ring-2 focus:ring-green-500"
+            />
+            <button
+              type="submit"
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
+            >
+              Add Paper
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Sidebar Drawer */}
       <AnimatePresence>
         {popupNode && (
           <motion.div
-            key="popup-card"
-            initial={{ opacity: 0, x: 150 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 150 }}
+            key="sidebar"
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
             transition={{ duration: 0.4, ease: 'easeOut' }}
-            className="absolute top-1/2 right-[15%] -translate-y-1/2 w-[420px] bg-white border border-green-100 rounded-2xl shadow-2xl p-6 z-50"
+            className="fixed top-0 right-0 h-full w-[420px] bg-white border-l border-green-200 shadow-2xl z-[120] flex flex-col"
           >
-            <div className="flex justify-between items-start mb-3">
+            <div className="flex justify-between items-center p-6 border-b border-green-100 bg-green-50">
               <h2 className="text-2xl font-semibold text-green-800">{popupNode.title}</h2>
               <button onClick={() => setPopupNode(null)}>
-                <X className="w-5 h-5 text-green-700 hover:text-green-900" />
+                <X className="w-6 h-6 text-green-700 hover:text-green-900" />
               </button>
             </div>
 
-            <p className="text-sm text-green-600 mb-2">
-              <strong>Authors:</strong> {popupNode.authors.join(', ')}
-            </p>
-
-            <div className="text-sm text-green-700 mb-4">
-              <strong>Abstract:</strong>
-              <div
-                className="bg-green-50 border border-green-100 rounded p-2 mt-1"
-                dangerouslySetInnerHTML={{
-                  __html: hljs.highlight(popupNode.summary, { language: 'plaintext' }).value,
-                }}
-              />
-            </div>
-
-            <div className="text-sm text-green-700">
-              <strong>Keywords / Similarities:</strong>
-              <ul className="list-disc ml-5 mt-1">
-                {popupNode.keywords.map((kw: string, i: number) => (
-                  <li key={i}>{kw}</li>
-                ))}
-              </ul>
-            </div>
+            <motion.div
+              key={popupNode.id}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.25 }}
+              className="p-6 overflow-y-auto flex-1"
+            >
+              <p className="text-sm text-green-600 mb-3">
+                <strong>Authors:</strong> {popupNode.authors.join(', ')}
+              </p>
+              <div className="text-sm text-green-700 mb-4">
+                <strong>Abstract:</strong>
+                <div
+                  className="bg-green-50 border border-green-100 rounded p-2 mt-1"
+                  dangerouslySetInnerHTML={{
+                    __html: hljs.highlight(popupNode.summary, {
+                      language: 'plaintext',
+                    }).value,
+                  }}
+                />
+              </div>
+              <div className="text-sm text-green-700">
+                <strong>Keywords:</strong>
+                <ul className="list-disc ml-5 mt-1">
+                  {popupNode.keywords.map((kw: string, i: number) => (
+                    <li key={i}>{kw}</li>
+                  ))}
+                </ul>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
