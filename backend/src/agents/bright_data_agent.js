@@ -26,12 +26,12 @@ const CONFIG = {
 
 // Content processing constants
 const CONTENT_LIMITS = {
-  SCRAPE_PREVIEW: 3000,
-  MAX_RESULTS: 5,
-  MAX_DOMAINS_PER_SOURCE: 5,
-  CHUNK_SIZE: 1000,
-  CHUNK_OVERLAP: 200,
-  CHROMA_BATCH_SIZE: 100,
+  SCRAPE_PREVIEW: 3000,  // Characters to include per scraped page
+  MAX_RESULTS: 50,        // Default maximum URLs to analyze
+  MAX_DOMAINS_PER_SOURCE: 5, // Maximum pages per domain for diversity (increased for larger requests)
+  CHUNK_SIZE: 1000,      // Characters per chunk for embedding
+  CHUNK_OVERLAP: 200,    // Overlap between chunks
+  CHROMA_BATCH_SIZE: 100, // Maximum chunks per Chroma batch (Google API limit)
 };
 
 // Trusted domains (unchanged)

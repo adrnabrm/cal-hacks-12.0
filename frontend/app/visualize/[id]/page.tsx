@@ -1,3 +1,4 @@
+// app/graphs/[id]/page.tsx
 'use client';
 import Link from 'next/link';
 import { useState, useEffect, useMemo } from 'react';
@@ -7,44 +8,87 @@ import TreeCanvas from '../../../components/TreeCanvas';
 import Sidebar from '../../../components/Sidebar';
 import WateringOverlay from '../../../components/WateringOverlay';
 import BlankTreeInput from '../../../components/BlankTreeInput';
-import { exampleTree } from '@/lib/exampleTree';
-import { TreeNode } from '@/lib/types';
+// import { exampleTree } from '@/lib/exampleTree'; // not used
+import type { TreeNode } from '@/lib/types';
 
 export default function VisualizePage() {
   const { id } = useParams();
   const router = useRouter();
 
-  // 🌳 This holds your actual tree data for this page
+  // 🌳 Tree data and UI state
   const [treeData, setTreeData] = useState<TreeNode | null>(null);
   const [popupNode, setPopupNode] = useState<TreeNode | null>(null);
+
+  // 💧 Watering overlay and render phases
   const [isWatering, setIsWatering] = useState(false);
-  const [rendered, setRendered] = useState(false);
+  const [rendered, setRendered] = useState(true); // start "rendered" so first draw isn't animated
+  const [awaitingChildrenDraw, setAwaitingChildrenDraw] = useState(false); // ignore seed draw, wait for children
+
+  // 🏷️ Page label derived from route
   const [treeName, setTreeName] = useState<string>('Research Tree');
+
+  // 🔄 Compute "firstTime" for TreeCanvas animations
+  const firstTime = useMemo(() => !rendered, [rendered]);
 
   // 🪴 Decode the tree name from the Library URL (e.g., /graphs/Tree-1)
   useEffect(() => {
     if (id) {
-      const decoded = decodeURIComponent(id.toString());
+      const decoded = decodeURIComponent(String(id));
       const formatted = decoded.replace(/-/g, ' ');
       setTreeName(formatted);
     }
   }, [id]);
 
-  const firstTime = useMemo(() => !rendered, [rendered]);
-
-  // 🌱 Function that runs when user inputs a paper title
-  const submitPaper = (title: string) => {
-    // Simulate creating a seed node — this is where you can hook your backend / search logic later
+  // 🌱 Trigger agent query, animate only when CHILDREN arrive
+  const submitPaper = async (title: string) => {
+    // 1) Show overlay and seed immediately, but do NOT toggle firstTime yet
+    setIsWatering(true);
     setTreeData({
       id: 'seed',
       title: `Seed Paper: ${title}`,
-      authors: ['Placeholder Author'],
-      keywords: ['example', 'testing'],
-      summary: 'This is a placeholder summary for demonstration purposes.',
+      authors: ['User'],
+      keywords: ['query'],
+      summary: 'Fetching…',
       children: [],
     });
+
+    try {
+      // 2) Call backend agent
+      const q = encodeURIComponent(title);
+      const res = await fetch(`http://localhost:8000/agent?q=${q}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      // 3) Map backend result -> TreeNode[] children
+      //    Adjust mapping to your /agent response shape.
+      //    Here we assume { ok, sources: [{ title, url, domain, summary, status }, ...] }
+      const children: TreeNode[] = Array.isArray(data?.sources)
+        ? data.sources
+            .filter((s: any) => s?.status === 'success')
+            .map((s: any, i: number) => ({
+              id: `src_${Date.now()}_${i}`,
+              title: s?.title || s?.domain || 'Untitled',
+              authors: [],
+              keywords: s?.domain ? [String(s.domain)] : [],
+              summary: typeof s?.summary === 'string' ? s.summary : String(s?.summary ?? ''),
+              children: [],
+            }))
+        : [];
+
+      // 4) Merge children first, THEN arm the animation pass for children
+      setTreeData(prev => (prev ? { ...prev, children, summary: `Results for: ${title}` } : prev));
+      setAwaitingChildrenDraw(true); // next onRendered corresponds to children draw
+      setRendered(false);            // makes firstTime=true only for the CHILDREN pass
+    } catch (e) {
+      // On error, stop overlay and show message
+      console.error(e);
+      setIsWatering(false);
+      setAwaitingChildrenDraw(false);
+      setTreeData(prev => (prev ? { ...prev, summary: 'Error retrieving results.' } : prev));
+    }
   };
 
+  // 🗑️ Simple delete handler (demo)
   const handleDelete = () => {
     if (confirm(`Delete ${treeName}?`)) {
       alert(`${treeName} deleted 🌳`);
@@ -85,8 +129,15 @@ export default function VisualizePage() {
         data={treeData}
         firstTime={firstTime}
         onNodeClick={(n) => setPopupNode(n)}
-        onWatering={setIsWatering}
-        onRendered={() => setRendered(true)}
+        onWatering={setIsWatering} // TreeCanvas may temporarily toggle during its own animations
+        onRendered={() => {
+          // Ignore the seed render. Stop only after the children pass completes.
+          if (awaitingChildrenDraw) {
+            setAwaitingChildrenDraw(false); // the children draw just finished
+            setRendered(true);
+            setIsWatering(false);          // hide overlay now
+          }
+        }}
       />
 
       {/* 🌱 Input box appears when no treeData exists */}

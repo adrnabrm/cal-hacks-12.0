@@ -7,6 +7,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { CloudClient } from "chromadb";
 import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import cors from 'cors';
 
 try {
   dotenv.config();
@@ -14,13 +15,14 @@ try {
   const app = express();
   const port = process.env.PORT || 8000;
 
+  app.use(cors({ origin: 'http://localhost:3000' })); // frontend origin
   app.use(express.json());
 
   // 🧠 Public route — test Bright Data agent manually
   app.get("/agent", async (req, res) => {
     try {
       const q = req.query.q || "latest AI developments 2025";
-      const data = await runWorkflow(q, { maxResults: 20 });
+      const data = await runWorkflow(q, { maxResults: 30 });
       res.json({ ok: true, ...data });
     } catch (e) {
       console.error("Agent error:", e);
