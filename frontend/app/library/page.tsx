@@ -79,7 +79,7 @@ export default function LibraryPage() {
       return;
     }
 
-    router.push(`/visualize?treeId=${data.id}`);
+    router.push(`/visualize/${data.id}`);
   };
 
   // 🗑 Delete tree
@@ -98,7 +98,7 @@ export default function LibraryPage() {
 
   // 📂 Open tree
   const handleOpenTree = (id: string) => {
-    router.push(`/visualize?treeId=${id}`);
+    router.push(`/visualize/${id}`);
   };
 
   // 🚪 Log out
