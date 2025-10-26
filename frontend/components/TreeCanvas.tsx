@@ -52,7 +52,6 @@ export default function TreeCanvas({
     const seedY = height - 100;
     const seedX = width / 2;
 
-    // Soil gradient
     const defs = svg.append('defs');
     const grad = defs
       .append('linearGradient')
@@ -64,7 +63,6 @@ export default function TreeCanvas({
     grad.append('stop').attr('offset', '0%').attr('stop-color', '#a16207').attr('stop-opacity', 0.4);
     grad.append('stop').attr('offset', '100%').attr('stop-color', '#451a03').attr('stop-opacity', 0.8);
 
-    // Ground + stem
     const hillPath = d3
       .line<number[]>()
       .curve(d3.curveCatmullRom.alpha(0.5))(
@@ -100,7 +98,6 @@ export default function TreeCanvas({
 
     if (!data) return;
 
-    // Layout
     const root = d3.hierarchy<TreeNode>(data);
     const layout = d3.tree<TreeNode>().nodeSize([240, 220]);
     layout(root);
@@ -117,7 +114,6 @@ export default function TreeCanvas({
       return `M${sx},${sy} C${sx},${midY} ${tx},${midY} ${tx},${ty}`;
     };
 
-    // Links
     const links = linkGroup
       .selectAll('path')
       .data(root.links())
@@ -160,7 +156,6 @@ export default function TreeCanvas({
       links.attr('d', (d: any) => bezier(d));
     }
 
-    // Nodes
     const nodes = nodeGroup
       .selectAll('g')
       .data(root.descendants())
@@ -177,7 +172,7 @@ export default function TreeCanvas({
       nodes
         .append('circle')
         .attr('r', 0)
-        .attr('fill', (d: any) => (d.children ? '#22c55e' : '#bbf7d0'))
+        .attr('fill', (d: any) => (d.depth === 0 ? '#22c55e' : '#bbf7d0'))
         .attr('stroke', '#166534')
         .attr('stroke-width', 2)
         .transition()
@@ -195,16 +190,26 @@ export default function TreeCanvas({
       nodes
         .append('circle')
         .attr('r', (d: any) => (d.depth === 0 ? 30 : 25))
-        .attr('fill', (d: any) => (d.children ? '#22c55e' : '#bbf7d0'))
+        .attr('fill', (d: any) => (d.depth === 0 ? '#22c55e' : '#bbf7d0'))
         .attr('stroke', '#166534')
         .attr('stroke-width', 2);
     }
 
-    // Labels
+    // === FIXED SECTION ===
     const labels = nodes.append('g').attr('transform', 'translate(0,-45)');
     labels.each(function (d: any, i) {
       const g = d3.select(this);
-      const t = g.append('text').text(d.data.title).attr('font-size', 13).attr('font-weight', 600);
+
+      // ✅ Now correctly handles both top-level title and results_json.title
+      const title =
+        d.data.title ??
+        d.data.results_json?.title ??
+        d.data.domain ??
+        d.data.keywords?.[0] ??
+        '(No title)';
+
+
+      const t = g.append('text').text(title).attr('font-size', 13).attr('font-weight', 600);
       const w = (t.node() as SVGTextElement).getBBox().width + 20;
       t.remove();
 
@@ -226,14 +231,31 @@ export default function TreeCanvas({
         .attr('fill', '#166534')
         .attr('dy', 5)
         .attr('opacity', firstTime ? 0 : 1)
-        .text(d.data.title);
+        .text(title);
 
       if (firstTime) {
-        box.transition().delay(800 + i * 150).duration(400).attr('opacity', 0.9);
-        text.transition().delay(850 + i * 150).duration(400).attr('opacity', 1).attr('transform', 'translate(0,-5)');
+        box
+          .transition()
+          .delay(800 + i * 150)
+          .duration(400)
+          .attr('opacity', 0.9);
+        text
+          .transition()
+          .delay(850 + i * 150)
+          .duration(400)
+          .attr('opacity', 1)
+          .attr('transform', 'translate(0,-5)');
       }
     });
+    // === END FIX ===
   }, [activeTab, data, firstTime, onNodeClick, onRendered, onWatering]);
 
-  return <svg ref={svgRef} className="absolute inset-0 block z-10" style={{ userSelect: 'none' }} />;
+  return (
+    <svg
+      ref={svgRef}
+      className="absolute inset-0 block z-10"
+      style={{ userSelect: 'none' }}
+    />
+  );
 }
+

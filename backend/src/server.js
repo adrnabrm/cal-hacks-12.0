@@ -1,13 +1,12 @@
-// src/server.js
 import express from "express";
 import dotenv from "dotenv";
+import cors from "cors";
 import { runWorkflow } from "./agents/bright_data_agent.js";
 import { supabase } from "./database/supabaseClient.js";
 import { requireAuth } from "../middleware/auth.js";
 import { CloudClient } from "chromadb";
 import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import cors from 'cors';
 
 try {
   dotenv.config();
@@ -15,10 +14,16 @@ try {
   const app = express();
   const port = process.env.PORT || 8000;
 
-  app.use(cors({ origin: 'http://localhost:3000' })); // frontend origin
+  // 🧩 Enable CORS for local dev
+  app.use(
+    cors({
+      origin: ["http://localhost:3000", "http://127.0.0.1:3000"],
+      credentials: true,
+    })
+  );
   app.use(express.json());
 
-  // 🧠 Public route — test Bright Data agent manually
+  // 🧠 Public route — manual Bright Data test
   app.get("/agent", async (req, res) => {
     try {
       const q = req.query.q || "latest AI developments 2025";
@@ -30,13 +35,12 @@ try {
     }
   });
 
-  // ✅ Protected route — Create a new tree for the logged-in user
+  // 🌳 Create a new research tree
   app.post("/api/trees", requireAuth, async (req, res) => {
     const { prompt } = req.body;
     const user = req.user;
 
     try {
-      // 1️⃣ Create a new tree record for this user
       const { data: tree, error: treeError } = await supabase
         .from("trees")
         .insert({
@@ -48,19 +52,6 @@ try {
         .single();
 
       if (treeError) throw treeError;
-
-      // 2️⃣ Run Bright Data + Gemini pipeline to create nodes (future step)
-      // const nodes = await runWorkflow(prompt, { maxResults: 10 });
-      // await supabase.from("nodes").insert(
-      //   nodes.map(n => ({
-      //     tree_id: tree.id,
-      //     title: n.title,
-      //     summary: n.summary,
-      //     md_path: n.md_path,
-      //     created_at: new Date(),
-      //   }))
-      // );
-
       res.json({ ok: true, treeId: tree.id });
     } catch (e) {
       console.error("Create tree error:", e);
@@ -68,17 +59,181 @@ try {
     }
   });
 
-  // RAG Endpoint - query Chroma + gen AI response
+  // 🧩 GET /api/trees/:id — fetch a tree with its nodes
+  app.get("/api/trees/:id", requireAuth, async (req, res) => {
+    try {
+      const treeId = req.params.id;
+      const user = req.user;
+
+      // Verify ownership
+      const { data: tree, error: treeError } = await supabase
+        .from("trees")
+        .select("*")
+        .eq("id", treeId)
+        .eq("user_id", user.id)
+        .single();
+      if (treeError) throw treeError;
+
+      // Fetch nodes for this tree
+      const { data: nodes, error: nodeError } = await supabase
+        .from("nodes")
+        .select("*")
+        .eq("tree_id", treeId);
+      if (nodeError) throw nodeError;
+
+      res.json({ ok: true, tree, nodes });
+    } catch (e) {
+      console.error("Fetch tree error:", e);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // 🌱 POST /api/trees/:id/seed — run Bright Data + insert root/children
+  app.post("/api/trees/:id/seed", requireAuth, async (req, res) => {
+    const treeId = req.params.id;
+    const { prompt } = req.body;
+    const user = req.user;
+
+    try {
+      // 1️⃣ Verify tree ownership
+      const { error: treeError } = await supabase
+        .from("trees")
+        .select("id")
+        .eq("id", treeId)
+        .eq("user_id", user.id)
+        .single();
+      if (treeError) throw treeError;
+
+      // 2️⃣ Run Bright Data workflow
+      const workflowResult = await runWorkflow(prompt, { maxResults: 10 });
+      const sources = workflowResult?.sources || [];
+
+      // 3️⃣ Insert root node
+      const { data: rootNode, error: rootErr } = await supabase
+        .from("nodes")
+        .insert({
+          tree_id: treeId,
+          results_json: {
+            title: prompt,
+            summary: `Seed prompt: ${prompt}`,
+            status: "seed",
+          },
+          section: "root",
+          created_at: new Date(),
+        })
+        .select()
+        .single();
+      if (rootErr) throw rootErr;
+
+      // 4️⃣ Prepare and insert child nodes
+      const childrenToInsert = sources.map((s) => ({
+        tree_id: treeId,
+        parent_node_id: rootNode.id,
+        results_json: {
+          title: s.title || s.domain || "Untitled",
+          domain: s.domain || null,
+          url: s.url || null,
+          snippet: s.snippet || null,
+          summary: s.summary || "",
+          status: s.status || "success",
+        },
+        md_file_path: s.md_path || null,
+        embedding_id: s.embedding_id ? [s.embedding_id] : null,
+        vectorized: s.vectorized ?? true,
+        section: "overview",
+        created_at: new Date(),
+      }));
+
+      let insertedChildren = [];
+      if (childrenToInsert.length > 0) {
+        const { data: inserted, error: insertErr } = await supabase
+          .from("nodes")
+          .insert(childrenToInsert)
+          .select(); // ✅ returns new rows with UUIDs
+        if (insertErr) throw insertErr;
+        insertedChildren = inserted;
+      }
+
+      // 5️⃣ Return root + children with IDs
+      res.json({
+        ok: true,
+        treeRoot: {
+          ...rootNode,
+          children: insertedChildren,
+        },
+      });
+    } catch (e) {
+      console.error("Seed tree error:", e);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // 🌿 POST /api/nodes/:nodeId/expand — expand node by section
+  app.post("/api/nodes/:nodeId/expand", requireAuth, async (req, res) => {
+    const nodeId = req.params.nodeId;
+    const { section } = req.body;
+
+    try {
+      // 1️⃣ Fetch parent node
+      const { data: parentNode, error: parentErr } = await supabase
+        .from("nodes")
+        .select("*")
+        .eq("id", nodeId)
+        .single();
+      if (parentErr) throw parentErr;
+
+      // 2️⃣ Run Bright Data again for expansion
+      const expandPrompt = `${
+        parentNode.results_json?.title || "Paper"
+      } — expand section: ${section}`;
+      const workflowResult = await runWorkflow(expandPrompt, { maxResults: 6 });
+      const sources = workflowResult?.sources || [];
+
+      // 3️⃣ Insert children under this node
+      const children = sources.map((s) => ({
+        tree_id: parentNode.tree_id,
+        parent_node_id: nodeId,
+        results_json: {
+          title: s.title || s.domain || "Untitled",
+          domain: s.domain || null,
+          url: s.url || null,
+          snippet: s.snippet || null,
+          summary: s.summary || "",
+          status: s.status || "success",
+        },
+        md_file_path: s.md_path || null,
+        embedding_id: s.embedding_id ? [s.embedding_id] : null,
+        vectorized: s.vectorized ?? true,
+        section,
+        created_at: new Date(),
+      }));
+
+      let insertedChildren = [];
+      if (children.length > 0) {
+        const { data: inserted, error: insertErr } = await supabase
+          .from("nodes")
+          .insert(children)
+          .select(); // ✅ ensures returned IDs
+        if (insertErr) throw insertErr;
+        insertedChildren = inserted;
+      }
+
+      res.json({ ok: true, children: insertedChildren });
+    } catch (e) {
+      console.error("Expand node error:", e);
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // 💬 RAG endpoint — query Chroma Cloud for contextual answers
   app.post("/api/rag", async (req, res) => {
     try {
       const { query } = req.body;
-      if (!query || query.trim().length === 0) {
-        return res.status(400).json({ ok: false, error: "Missing 'query field" });
-      }
+      if (!query || query.trim().length === 0)
+        return res.status(400).json({ ok: false, error: "Missing 'query' field" });
 
       console.log(`Received query: "${query}"`);
 
-      // Chroma Cloud client - automatically uses env variables
       const chromaClient = new CloudClient({
         tenant: process.env.CHROMA_TENANT,
         database: process.env.CHROMA_DATABASE,
@@ -92,15 +247,12 @@ try {
       const embedder = new GoogleGenerativeAIEmbeddings({
         apiKey: process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY,
         model: "text-embedding-004",
-      });      
+      });
 
-      // Returns an array of vectors; use [0] for single query
       const queryEmbedding = await embedder.embedQuery(query);
-
-
       const results = await collection.query({
         queryEmbeddings: [queryEmbedding],
-        nResults: 5, // number of chunks to retrieve
+        nResults: 5,
       });
 
       const topChunks = results.documents[0];
@@ -113,7 +265,7 @@ try {
         model: process.env.GOOGLE_MODEL || "gemini-2.5-flash",
         temperature: 0.2,
       });
-      
+
       const response = await llm.invoke([
         {
           role: "system",
@@ -141,9 +293,13 @@ try {
   });
 
   // 🧭 Root route
-  app.get("/", (_req, res) => res.send("Backend running. Try /agent?q=... or POST /api/trees"));
+  app.get("/", (_req, res) =>
+    res.send("Backend running. Try /agent?q=... or POST /api/trees")
+  );
 
-  app.listen(port, () => console.log(`✅ Backend listening on :${port}`));
+  app.listen(port, () =>
+    console.log(`✅ Backend listening on :${port}`)
+  );
 } catch (error) {
   console.error("❌ Fatal error during startup:", error);
   process.exit(1);

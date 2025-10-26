@@ -8,6 +8,7 @@ import TreeCanvas from '../../../components/TreeCanvas';
 import Sidebar from '../../../components/Sidebar';
 import WateringOverlay from '../../../components/WateringOverlay';
 import BlankTreeInput from '../../../components/BlankTreeInput';
+import RainOverlay from '../../../components/RainOverlay.tsx';
 // import { exampleTree } from '@/lib/exampleTree'; // not used
 import type { TreeNode } from '@/lib/types';
 
@@ -62,18 +63,26 @@ export default function VisualizePage() {
       // 3) Map backend result -> TreeNode[] children
       //    Adjust mapping to your /agent response shape.
       //    Here we assume { ok, sources: [{ title, url, domain, summary, status }, ...] }
-      const children: TreeNode[] = Array.isArray(data?.sources)
-        ? data.sources
-            .filter((s: any) => s?.status === 'success')
-            .map((s: any, i: number) => ({
-              id: `src_${Date.now()}_${i}`,
-              title: s?.title || s?.domain || 'Untitled',
-              authors: [],
-              keywords: s?.domain ? [String(s.domain)] : [],
-              summary: typeof s?.summary === 'string' ? s.summary : String(s?.summary ?? ''),
-              children: [],
-            }))
-        : [];
+      const children: TreeNode[] = data.sources
+      .filter((s: any) => s?.status === 'success')
+      .map((s: any, i: number) => {
+        const fallbackTitle =
+          (s?.title && String(s.title).trim()) ||
+          (s?.snippet && String(s.snippet).slice(0, 80)) ||
+          (s?.url ? new URL(s.url).hostname : s?.domain) ||
+          'Untitled';
+
+        return {
+          id: `src_${Date.now()}_${i}`,
+          title: fallbackTitle,
+          authors: [],
+          keywords: s?.domain ? [String(s.domain)] : [],
+          summary: typeof s?.summary === 'string' ? s.summary : String(s?.summary ?? ''),
+          results_json: { title: fallbackTitle },        // <-- add this
+          children: [],
+        };
+      });
+
 
       // 4) Merge children first, THEN arm the animation pass for children
       setTreeData(prev => (prev ? { ...prev, children, summary: `Results for: ${title}` } : prev));
@@ -121,7 +130,8 @@ export default function VisualizePage() {
       </div>
 
       {/* Watering Animation Overlay */}
-      <WateringOverlay show={isWatering} />
+      <RainOverlay show={isWatering} />
+
 
       {/* 🌳 The Tree Visualization Canvas */}
       <TreeCanvas
