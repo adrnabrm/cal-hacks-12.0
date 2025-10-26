@@ -45,7 +45,6 @@ const exampleTree = {
           keywords: ['data', 'temperature'],
           summary: 'Analyzing temperature datasets.',
         },
-        
       ],
     },
   ],
@@ -162,7 +161,7 @@ export default function VisualizePage() {
       return `M${sx},${sy} C${sx},${midY} ${tx},${midY} ${tx},${ty}`;
     };
 
-    // --- Animate Links (Branches) ---
+    // --- Animate Branches ---
     const links = linkGroup
       .selectAll('path')
       .data(root.links())
@@ -245,21 +244,24 @@ export default function VisualizePage() {
         .attr('stroke-width', 2);
     }
 
-    // --- Labels ---
+    // --- Labels Fade In After Node Growth ---
     const labels = nodes.append('g').attr('transform', 'translate(0,-45)');
     labels.each(function (d: any, i) {
       const g = d3.select(this);
       const t = g.append('text').text(d.data.title).attr('font-size', 13).attr('font-weight', 600);
       const w = (t.node() as SVGTextElement).getBBox().width + 20;
       t.remove();
-      g.append('rect')
+
+      const box = g
+        .append('rect')
         .attr('x', -w / 2)
         .attr('y', -15)
         .attr('width', w)
         .attr('height', 28)
         .attr('rx', 8)
         .attr('fill', 'white')
-        .attr('opacity', 0.9);
+        .attr('opacity', firstTime ? 0 : 0.9);
+
       const text = g
         .append('text')
         .attr('text-anchor', 'middle')
@@ -271,15 +273,21 @@ export default function VisualizePage() {
         .text(d.data.title);
 
       if (firstTime) {
+        box
+          .transition()
+          .delay(800 + i * 150)
+          .duration(400)
+          .attr('opacity', 0.9);
         text
           .transition()
-          .delay(700 + i * 150)
+          .delay(850 + i * 150)
           .duration(400)
           .attr('opacity', 1)
           .attr('transform', 'translate(0,-5)');
       }
     });
   };
+
 
   // --- Lifecycle ---
   useEffect(() => {
