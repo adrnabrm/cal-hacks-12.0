@@ -1,72 +1,43 @@
 'use client';
-import { motion, AnimatePresence } from 'framer-motion';
-import { X } from 'lucide-react';
-import hljs from 'highlight.js';
-import 'highlight.js/styles/github.css';
-import { TreeNode } from '../lib/types';
+import { FormEvent } from 'react';
 
 interface Props {
-  node: TreeNode | null;
-  onClose: () => void;
+  visible: boolean;
+  onSubmit: (title: string) => void;
 }
 
-export default function Sidebar({ node, onClose }: Props) {
+export default function BlankTreeInput({ visible, onSubmit }: Props) {
+  if (!visible) return null;
+
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const input = form.elements.namedItem('paperTitle') as HTMLInputElement;
+    const title = input.value.trim();
+    if (!title) return;
+    onSubmit(title);
+    form.reset();
+  };
+
   return (
-    <AnimatePresence>
-      {node && (
-        <motion.div
-          key="sidebar"
-          initial={{ x: '100%' }}
-          animate={{ x: 0 }}
-          exit={{ x: '100%' }}
-          transition={{ duration: 0.4, ease: 'easeOut' }}
-          className="fixed top-0 right-0 h-full w-[420px] bg-white border-l border-green-200 shadow-2xl z-[120] flex flex-col"
+    <div className="absolute inset-0 flex flex-col items-center justify-center z-[80] text-center">
+      <p className="text-lg text-green-800 mb-3">
+        🌱 This tree is empty. Add your first research paper below.
+      </p>
+      <form onSubmit={handleSubmit} className="flex gap-2 justify-center">
+        <input
+          type="text"
+          name="paperTitle"
+          placeholder="Enter paper title..."
+          className="border border-green-300 rounded-lg px-3 py-2 w-80 focus:ring-2 focus:ring-green-500"
+        />
+        <button
+          type="submit"
+          className="bg-green-599 text-white px-4 py-2 rounded-lg hover:bg-green-700"
         >
-          {/* Header */}
-          <div className="flex justify-between items-center p-6 border-b border-green-100 bg-green-50">
-            <h2 className="text-2xl font-semibold text-green-800">{node.title}</h2>
-            <button onClick={onClose} aria-label="Close sidebar">
-              <X className="w-6 h-6 text-green-700 hover:text-green-900" />
-            </button>
-          </div>
-
-          {/* Content */}
-          <motion.div
-            key={node.id}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 0.25 }}
-            className="p-6 overflow-y-auto flex-1"
-          >
-            {/* Authors */}
-            <p className="text-sm text-green-600 mb-3">
-              <strong>Authors:</strong> {node.authors.join(', ')}
-            </p>
-
-            {/* Summary */}
-            <div className="text-sm text-green-700 mb-4">
-              <strong>Abstract:</strong>
-              <div
-                className="bg-green-50 border border-green-100 rounded p-2 mt-1"
-                dangerouslySetInnerHTML={{
-                  __html: hljs.highlight(node.summary, { language: 'plaintext' }).value,
-                }}
-              />
-            </div>
-
-            {/* Keywords */}
-            <div className="text-sm text-green-700">
-              <strong>Keywords:</strong>
-              <ul className="list-disc ml-5 mt-1">
-                {node.keywords.map((kw) => (
-                  <li key={kw}>{kw}</li>
-                ))}
-              </ul>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+          Add Paper
+        </button>
+      </form>
+    </div>
   );
 }
