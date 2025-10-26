@@ -65,7 +65,7 @@ export default function Home() {
         transition={{ duration: 1.2 }}
         className="mt-16"
       >
-        <Link href="/visualize">
+        <Link href="/login">
         <button className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-full text-lg shadow-md transition-transform hover:scale-105">
           Get Started
         </button>
