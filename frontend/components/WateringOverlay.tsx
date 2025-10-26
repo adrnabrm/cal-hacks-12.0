@@ -38,15 +38,24 @@ export default function WateringOverlay({ show }: { show: boolean }) {
               </svg>
             </motion.div>
 
-            <div className="relative h-24 w-20 pointer-events-none">
+            <div className="relative h-24 w-24 pointer-events-none">
               {[...Array(6)].map((_, i) => (
                 <motion.div
                   key={i}
-                  className="absolute left-1/2 w-2 h-4 bg-blue-400/80 rounded-full"
-                  style={{ transform: 'translateX(-50%)', pointerEvents: 'none' }}
+                  className="absolute w-2 h-4 bg-blue-400/80 rounded-full"
+                  style={{
+                    left: `${40 + i * 4}%`, // spreads droplets horizontally
+                    transform: 'translateX(-50%)',
+                    pointerEvents: 'none',
+                  }}
                   initial={{ y: -5, opacity: 0 }}
-                  animate={{ y: [0, 35, 55], opacity: [0, 1, 0] }}
-                  transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.25, ease: 'easeInOut' }}
+                  animate={{ y: [0, 35, 300], opacity: [0, 1, 0] }}
+                  transition={{
+                    duration: 1.2,
+                    repeat: Infinity,
+                    delay: i * 0.25,
+                    ease: 'easeInOut',
+                  }}
                 />
               ))}
             </div>
