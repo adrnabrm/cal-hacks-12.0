@@ -1,6 +1,6 @@
 /**
  * Modified Workflow: MCP-Powered Research Agent with JSON Storage
- * Searches web, extracts content, and stores summaries in JSON format
+ * Searches web, extracts content, stores summaries in JSON format, and saves markdown to files
  */
 
 import 'dotenv/config';
@@ -89,6 +89,17 @@ function isTrustedDomain(url) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Sanitize text for use as filename
+ */
+function sanitizeFilename(text, maxLength = 100) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .substring(0, maxLength);
 }
 
 function validateConfig() {
@@ -203,6 +214,10 @@ async function runWorkflow(query, options = {}) {
   console.log(`Max sources to analyze: ${maxResults}`);
   console.log(`Output file: ${outputFile}\n`);
 
+  // Ensure md_files directory exists
+  await fs.mkdir('./md_files', { recursive: true });
+  console.log('✓ Markdown directory created/verified: ./md_files\n');
+
   // Initialize MCP Client
   console.log('Step 1: Initializing MCP Client...');
   const client = new MultiServerMCPClient({
@@ -272,11 +287,19 @@ async function runWorkflow(query, options = {}) {
     const urlData = urls[i];
     console.log(`\n[${i + 1}/${urls.length}] Processing: ${urlData.domain}`);
     
+    // Generate filename for markdown
+    const filename = `${sanitizeFilename(urlData.domain)}-${i + 1}.md`;
+    const filepath = `./md_files/${filename}`;
+    
     try {
       // Scrape content
       console.log('  - Scraping content...');
       const content = await scrapeTool.invoke({ url: urlData.url });
       const contentText = typeof content === 'string' ? content : JSON.stringify(content);
+      
+      // Save markdown to file
+      console.log(`  - Saving markdown to ${filename}...`);
+      await fs.writeFile(filepath, contentText);
       
       // Generate summary
       console.log('  - Generating summary...');
@@ -295,6 +318,7 @@ async function runWorkflow(query, options = {}) {
         title: urlData.title,
         snippet: urlData.snippet,
         summary,
+        markdownFile: filepath,
         scrapedAt: new Date().toISOString(),
         status: 'success'
       });
@@ -312,6 +336,7 @@ async function runWorkflow(query, options = {}) {
         title: urlData.title,
         snippet: urlData.snippet,
         summary: null,
+        markdownFile: filepath,
         error: error.message,
         scrapedAt: new Date().toISOString(),
         status: 'failed'
@@ -333,6 +358,7 @@ async function runWorkflow(query, options = {}) {
   console.log(`Successful: ${researchResults.sources.filter(s => s.status === 'success').length}`);
   console.log(`Failed: ${researchResults.sources.filter(s => s.status === 'failed').length}`);
   console.log(`\nResults stored in: ${outputFile}`);
+  console.log(`Markdown files stored in: ./md_files/`);
   console.log('='.repeat(60));
 
   try {
@@ -355,6 +381,7 @@ function displayResults(results) {
       console.log(`\n[${idx + 1}] ${source.title}`);
       console.log(`Domain: ${source.domain}`);
       console.log(`URL: ${source.url}`);
+      console.log(`Markdown File: ${source.markdownFile}`);
       console.log(`\nSummary:`);
       console.log(source.summary);
       console.log('-'.repeat(80));
