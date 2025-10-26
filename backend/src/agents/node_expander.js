@@ -38,7 +38,7 @@ export async function expandNodeSection(nodeId, sectionName) {
   // 2️⃣ Fetch markdown from Supabase Storage
   console.log("📥 Fetching markdown file...");
   const { data: file, error: fileError } = await supabase.storage
-    .from("markdown") // Adjust to your bucket name
+    .from("markdowns") // Adjust to your bucket name
     .download(node.md_file_path);
 
   if (fileError) throw new Error(`Failed to fetch markdown: ${fileError.message}`);
