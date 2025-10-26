@@ -177,7 +177,7 @@ export default function TreeCanvas({
       nodes
         .append('circle')
         .attr('r', 0)
-        .attr('fill', (d: any) => (d.children ? '#22c55e' : '#bbf7d0'))
+        .attr('fill', (d: any) => (d.depth === 0 ? '#22c55e' : '#bbf7d0'))
         .attr('stroke', '#166534')
         .attr('stroke-width', 2)
         .transition()
@@ -195,7 +195,7 @@ export default function TreeCanvas({
       nodes
         .append('circle')
         .attr('r', (d: any) => (d.depth === 0 ? 30 : 25))
-        .attr('fill', (d: any) => (d.children ? '#22c55e' : '#bbf7d0'))
+        .attr('fill', (d: any) => (d.depth === 0 ? '#22c55e' : '#bbf7d0'))
         .attr('stroke', '#166534')
         .attr('stroke-width', 2);
     }
@@ -204,7 +204,8 @@ export default function TreeCanvas({
     const labels = nodes.append('g').attr('transform', 'translate(0,-45)');
     labels.each(function (d: any, i) {
       const g = d3.select(this);
-      const t = g.append('text').text(d.data.title).attr('font-size', 13).attr('font-weight', 600);
+      const title = d.data.results_json?.title || '(No title)';
+      const t = g.append('text').text(title).attr('font-size', 13).attr('font-weight', 600);
       const w = (t.node() as SVGTextElement).getBBox().width + 20;
       t.remove();
 
@@ -226,14 +227,29 @@ export default function TreeCanvas({
         .attr('fill', '#166534')
         .attr('dy', 5)
         .attr('opacity', firstTime ? 0 : 1)
-        .text(d.data.title);
+        .text(title);
 
       if (firstTime) {
-        box.transition().delay(800 + i * 150).duration(400).attr('opacity', 0.9);
-        text.transition().delay(850 + i * 150).duration(400).attr('opacity', 1).attr('transform', 'translate(0,-5)');
+        box
+          .transition()
+          .delay(800 + i * 150)
+          .duration(400)
+          .attr('opacity', 0.9);
+        text
+          .transition()
+          .delay(850 + i * 150)
+          .duration(400)
+          .attr('opacity', 1)
+          .attr('transform', 'translate(0,-5)');
       }
     });
   }, [activeTab, data, firstTime, onNodeClick, onRendered, onWatering]);
 
-  return <svg ref={svgRef} className="absolute inset-0 block z-10" style={{ userSelect: 'none' }} />;
+  return (
+    <svg
+      ref={svgRef}
+      className="absolute inset-0 block z-10"
+      style={{ userSelect: 'none' }}
+    />
+  );
 }
