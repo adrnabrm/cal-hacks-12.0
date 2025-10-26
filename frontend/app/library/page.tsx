@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import SwitchPageButton from '@/components/SwitchPageButton';
 
 interface Tree {
   id: string;
@@ -203,6 +204,10 @@ export default function LibraryPage() {
         </Link>
         <p className="mt-2">© 2025 D1 Setters — Empowering Academia</p>
       </motion.footer>
+
+      <div className="mt-6">
+        <SwitchPageButton />
+      </div>
     </main>
   );
 }
