@@ -8,8 +8,8 @@ import TabsBar from '../../components/TabsBar';
 import Sidebar from '../../components/Sidebar';
 import WateringOverlay from '../../components/WateringOverlay';
 import BlankTreeInput from '../../components/BlankTreeInput';
-import { exampleTree } from '@/lib/exampleTree';
-import { TabNamesMap, TreesMap, TreeNode } from '@/lib/types';
+import { exampleTree } from '../../lib/exampleTree';
+import { TabNamesMap, TreesMap, TreeNode } from '../../lib/types';
 
 export default function VisualizePage() {
   const [trees, setTrees] = useState<TreesMap>({
