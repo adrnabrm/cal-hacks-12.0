@@ -1,180 +1,104 @@
+// app/graphs/[id]/page.tsx
 'use client';
+import Link from 'next/link';
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import TreeCanvas from '../../../components/TreeCanvas';
 import Sidebar from '../../../components/Sidebar';
 import WateringOverlay from '../../../components/WateringOverlay';
 import BlankTreeInput from '../../../components/BlankTreeInput';
-import { supabase } from '@/lib/supabaseClient';
+// import { exampleTree } from '@/lib/exampleTree'; // not used
 import type { TreeNode } from '@/lib/types';
 
 export default function VisualizePage() {
   const { id } = useParams();
   const router = useRouter();
 
+  // 🌳 Tree data and UI state
   const [treeData, setTreeData] = useState<TreeNode | null>(null);
   const [popupNode, setPopupNode] = useState<TreeNode | null>(null);
 
+  // 💧 Watering overlay and render phases
   const [isWatering, setIsWatering] = useState(false);
-  const [rendered, setRendered] = useState(true);
-  const [awaitingChildrenDraw, setAwaitingChildrenDraw] = useState(false);
+  const [rendered, setRendered] = useState(true); // start "rendered" so first draw isn't animated
+  const [awaitingChildrenDraw, setAwaitingChildrenDraw] = useState(false); // ignore seed draw, wait for children
 
+  // 🏷️ Page label derived from route
   const [treeName, setTreeName] = useState<string>('Research Tree');
+
+  // 🔄 Compute "firstTime" for TreeCanvas animations
   const firstTime = useMemo(() => !rendered, [rendered]);
 
-  const API_BASE = 'http://localhost:8000';
-  console.log('Seeding tree ID:', id);
-
-  // 🧩 1️⃣ Fetch tree and nodes from backend
+  // 🪴 Decode the tree name from the Library URL (e.g., /graphs/Tree-1)
   useEffect(() => {
-    const fetchTree = async () => {
-      try {
-        // 🔐 Get Supabase access token
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        if (!token) throw new Error('User not authenticated');
-
-        const res = await fetch(`${API_BASE}/api/trees/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error);
-
-        setTreeName(data.tree.title || 'Research Tree');
-
-        // 🧠 Build nested structure from flat nodes
-        const nodes = data.nodes || [];
-        const nodeMap: Record<string, TreeNode> = {};
-        nodes.forEach((n: any) => (nodeMap[n.id] = { ...n, children: [] }));
-
-        nodes.forEach((n: any) => {
-          if (n.parent_node_id && nodeMap[n.parent_node_id]) {
-            nodeMap[n.parent_node_id].children!.push(nodeMap[n.id]);
-          }
-        });
-
-        const root = nodes.find((n: any) => !n.parent_node_id);
-        setTreeData(root ? nodeMap[root.id] : null);
-      } catch (e) {
-        console.error('Fetch tree failed:', e);
-      }
-    };
-
-    if (id) fetchTree();
+    if (id) {
+      const decoded = decodeURIComponent(String(id));
+      const formatted = decoded.replace(/-/g, ' ');
+      setTreeName(formatted);
+    }
   }, [id]);
 
-  // 🌱 2️⃣ Seed the tree (initial Bright Data call)
-  const seedTree = async (prompt: string) => {
+  // 🌱 Trigger agent query, animate only when CHILDREN arrive
+  const submitPaper = async (title: string) => {
+    // 1) Show overlay and seed immediately, but do NOT toggle firstTime yet
     setIsWatering(true);
     setTreeData({
       id: 'seed',
-      results_json: {
-        title: `Seeding: ${prompt}`,
-        summary: 'Generating initial research tree…',
-      },
+      title: `Seed Paper: ${title}`,
+      authors: ['User'],
+      keywords: ['query'],
+      summary: 'Fetching…',
       children: [],
     });
 
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) throw new Error('User not authenticated');
-
-      const res = await fetch(`${API_BASE}/api/trees/${id}/seed`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ prompt }),
-      });
-
+      // 2) Call backend agent
+      const q = encodeURIComponent(title);
+      const res = await fetch(`http://localhost:8000/agent?q=${q}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      if (!data.ok) throw new Error(data.error);
 
-      setTreeData(data.treeRoot);
-      setAwaitingChildrenDraw(true);
-      setRendered(false);
+      // 3) Map backend result -> TreeNode[] children
+      //    Adjust mapping to your /agent response shape.
+      //    Here we assume { ok, sources: [{ title, url, domain, summary, status }, ...] }
+      const children: TreeNode[] = Array.isArray(data?.sources)
+        ? data.sources
+            .filter((s: any) => s?.status === 'success')
+            .map((s: any, i: number) => ({
+              id: `src_${Date.now()}_${i}`,
+              title: s?.title || s?.domain || 'Untitled',
+              authors: [],
+              keywords: s?.domain ? [String(s.domain)] : [],
+              summary: typeof s?.summary === 'string' ? s.summary : String(s?.summary ?? ''),
+              children: [],
+            }))
+        : [];
+
+      // 4) Merge children first, THEN arm the animation pass for children
+      setTreeData(prev => (prev ? { ...prev, children, summary: `Results for: ${title}` } : prev));
+      setAwaitingChildrenDraw(true); // next onRendered corresponds to children draw
+      setRendered(false);            // makes firstTime=true only for the CHILDREN pass
     } catch (e) {
-      console.error('Seed tree failed:', e);
+      // On error, stop overlay and show message
+      console.error(e);
       setIsWatering(false);
       setAwaitingChildrenDraw(false);
-      setTreeData((prev) =>
-        prev
-          ? {
-              ...prev,
-              results_json: {
-                ...(prev.results_json || {}),
-                summary: 'Error seeding tree.',
-              },
-            }
-          : prev
-      );
+      setTreeData(prev => (prev ? { ...prev, summary: 'Error retrieving results.' } : prev));
     }
   };
 
-  // 🌿 3️⃣ Expand existing node (section-based)
-  const expandNode = async (nodeId: string, section: string) => {
-    setIsWatering(true);
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) throw new Error('User not authenticated');
-
-      const res = await fetch(`${API_BASE}/api/nodes/${nodeId}/expand`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ section }),
-      });
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error);
-
-      const newChildren: TreeNode[] = data.children || [];
-
-      // Recursively attach new children to parent
-      const attachChildren = (node: TreeNode): TreeNode => {
-        if (node.id === nodeId) {
-          return { ...node, children: [...(node.children || []), ...newChildren] };
-        }
-        return { ...node, children: (node.children || []).map(attachChildren) };
-      };
-
-      setTreeData((prev) => (prev ? attachChildren(prev) : prev));
-      setAwaitingChildrenDraw(true);
-      setRendered(false);
-    } catch (e) {
-      console.error('Expand node failed:', e);
-      setIsWatering(false);
-      setAwaitingChildrenDraw(false);
-    }
-  };
-
-  // 🗑️ 4️⃣ Delete tree (redirect only for now)
-  const handleDelete = async () => {
+  // 🗑️ Simple delete handler (demo)
+  const handleDelete = () => {
     if (confirm(`Delete ${treeName}?`)) {
+      alert(`${treeName} deleted 🌳`);
       router.push('/library');
     }
   };
 
   return (
     <main className="w-screen h-screen text-green-900 relative overflow-hidden bg-gradient-to-b from-green-50 to-white">
-      {/* Header */}
+      {/* Header Controls */}
       <div className="relative z-[100] pointer-events-auto">
         <div className="absolute top-4 left-4 flex gap-2">
           <Link
@@ -196,36 +120,31 @@ export default function VisualizePage() {
         </div>
       </div>
 
-      {/* 💧 Watering Overlay */}
+      {/* Watering Animation Overlay */}
       <WateringOverlay show={isWatering} />
 
-      {/* 🌳 Tree Canvas */}
+      {/* 🌳 The Tree Visualization Canvas */}
       <TreeCanvas
         activeTab={treeName}
         data={treeData}
         firstTime={firstTime}
         onNodeClick={(n) => setPopupNode(n)}
-        onWatering={setIsWatering}
+        onWatering={setIsWatering} // TreeCanvas may temporarily toggle during its own animations
         onRendered={() => {
+          // Ignore the seed render. Stop only after the children pass completes.
           if (awaitingChildrenDraw) {
-            setAwaitingChildrenDraw(false);
+            setAwaitingChildrenDraw(false); // the children draw just finished
             setRendered(true);
-            setIsWatering(false);
+            setIsWatering(false);          // hide overlay now
           }
         }}
       />
 
-      {/* 🌱 Input appears only if tree is empty */}
-      <BlankTreeInput visible={!treeData} onSubmit={seedTree} />
+      {/* 🌱 Input box appears when no treeData exists */}
+      <BlankTreeInput visible={!treeData} onSubmit={submitPaper} />
 
-      {/* 📚 Sidebar */}
-      <Sidebar
-        node={popupNode}
-        onClose={() => setPopupNode(null)}
-        onExpand={(section) =>
-          popupNode && expandNode(popupNode.id, section)
-        }
-      />
+      {/* 📚 Sidebar for showing node info */}
+      <Sidebar node={popupNode} onClose={() => setPopupNode(null)} />
     </main>
   );
 }
