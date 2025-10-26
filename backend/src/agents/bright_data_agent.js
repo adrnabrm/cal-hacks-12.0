@@ -8,6 +8,8 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { MultiServerMCPClient } from '@langchain/mcp-adapters';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
+import { insertNode, updateNode } from '../database/nodes.js';
+import { uploadMarkdown } from '../services/markdownUploader.js';
 
 // Configuration constants
 const CONFIG = {
@@ -324,6 +326,42 @@ async function runWorkflow(query, options = {}) {
       });
       
       console.log('  ✓ Complete');
+       
+      // === 🧩 SUPABASE INTEGRATION ===
+      try {
+        const treeId = process.env.TEST_TREE_ID || '00000000-0000-0000-0000-000000000001';
+
+        // Create the JSON payload for insertion
+        const nodePayload = {
+          id: i + 1,
+          url: urlData.url,
+          domain: urlData.domain,
+          title: urlData.title,
+          snippet: urlData.snippet,
+          summary,
+          scrapedAt: new Date().toISOString(),
+          status: 'success'
+        };
+
+        // 1️⃣ Insert into Supabase `nodes` table
+        const node = await insertNode(treeId, nodePayload);
+        console.log(`  ✓ Node inserted into Supabase: ${node.id}`);
+
+        // 2️⃣ Read markdown file content
+        const markdownText = await fs.readFile(filepath, 'utf-8');
+
+        // 3️⃣ Upload markdown to Supabase Storage
+        const mdPath = await uploadMarkdown(node.id, markdownText);
+        console.log(`  ✓ Markdown uploaded: ${mdPath}`);
+
+        // 4️⃣ Update node record with md_file_path
+        await updateNode(node.id, { md_file_path: mdPath });
+        console.log('  ✓ Supabase record updated with md_file_path');
+
+      } catch (err) {
+        console.error(`  ⚠️ Supabase upload failed: ${err.message}`);
+      }
+      // ================================
       
     } catch (error) {
       console.log(`  ✗ Failed: ${error.message}`);
