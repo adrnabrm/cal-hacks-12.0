@@ -1,24 +1,37 @@
-import { analyzeNodeWithGemini } from './gemini_analysis.js';
-import { getDoc } from 'firebase/firestore';
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 
-async function expandNode(nodeId) {
-  // 1️⃣ Fetch node from Firestore
-  const nodeRef = doc(db, 'nodes', nodeId);
-  const nodeSnap = await getDoc(nodeRef);
-  const nodeData = nodeSnap.data();
+const gemini = new ChatGoogleGenerativeAI({
+  apiKey: process.env.GOOGLE_API_KEY,
+  model: "gemini-2.5-flash",
+});
 
-  // 2️⃣ Get markdown content
-  const textForAnalysis = nodeData.markdownContent || nodeData.summary;
+/**
+ * Analyzes markdown into sections + keywords
+ */
+export async function analyzeNodeWithGemini(markdown) {
+  const prompt = `
+  Analyze the following markdown and:
+  1. Break it into logical sections (with titles and short summaries)
+  2. Extract key concepts or keywords from each section
+  3. Return a concise JSON in the form:
+  {
+    "sections": [{ "title": "...", "summary": "...", "keywords": ["..."] }],
+    "keywords": ["..."],
+    "analyzedAt": "<ISO timestamp>"
+  }
 
-  // 3️⃣ Analyze with Gemini
-  const analysis = await analyzeNodeWithGemini(textForAnalysis);
+  Markdown:
+  ${markdown}
+  `;
 
-  // 4️⃣ Store sections + keywords back in Firestore
-  await updateDoc(nodeRef, {
-    sections: analysis.sections,
-    keywords: analysis.keywords,
-    analyzedAt: analysis.analyzedAt,
-  });
+  const res = await gemini.invoke([{ role: "user", content: prompt }]);
+  const text = res.content || "{}";
 
-  return analysis;
+  try {
+    return JSON.parse(text);
+  } catch {
+    console.warn("⚠️ Gemini response was not pure JSON, falling back to safe parse");
+    const match = text.match(/\{[\s\S]*\}/);
+    return match ? JSON.parse(match[0]) : { sections: [], keywords: [] };
+  }
 }
