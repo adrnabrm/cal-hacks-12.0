@@ -2,7 +2,7 @@
 import { motion } from 'framer-motion';
 import { Leaf, LogIn, UserPlus } from 'lucide-react';
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -14,16 +14,6 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-
-  // 🧠 Auto-redirect if already logged in
-  useEffect(() => {
-    (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) router.push('/visualize');
-    })();
-  }, [router]);
 
   // ✅ Handle Login / Signup
   const handleSubmit = async (e: React.FormEvent) => {
@@ -48,7 +38,7 @@ export default function LoginPage() {
           password,
         });
         if (error) throw error;
-        router.push('/visualize');
+        router.push('/library');
       }
     } catch (err: any) {
       setError(err.message);
