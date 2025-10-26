@@ -28,7 +28,7 @@ const CONFIG = {
 // Content processing constants
 const CONTENT_LIMITS = {
   SCRAPE_PREVIEW: 3000,  // Characters to include per scraped page
-  MAX_RESULTS: 5,        // Default maximum URLs to analyze
+  MAX_RESULTS: 50,        // Default maximum URLs to analyze
   MAX_DOMAINS_PER_SOURCE: 5, // Maximum pages per domain for diversity (increased for larger requests)
   CHUNK_SIZE: 1000,      // Characters per chunk for embedding
   CHUNK_OVERLAP: 200,    // Overlap between chunks
@@ -37,48 +37,49 @@ const CONTENT_LIMITS = {
 
 // Trusted academic and research domains
 const TRUSTED_DOMAINS = [
-  // Academic publishers
-  'ieee.org',
-  'acm.org',
-  'springer.com',
   'arxiv.org',
-  'nature.com',
-  'science.org',
-  'sciencedirect.com',
-  'wiley.com',
-  'tandfonline.com',
-  'sagepub.com',
-  'mdpi.com',
-  'frontiersin.org',
-  'plos.org',
-  'oup.com',  // Oxford University Press
-  'cambridge.org',
-  
-  // Research repositories
-  'researchgate.net',
-  'semanticscholar.org',
-  'scholar.google.com',
-  'pubmed.ncbi.nlm.nih.gov',
-  'ncbi.nlm.nih.gov',
-  'biorxiv.org',
-  'medrxiv.org',
-  'ssrn.com',
-  
-  // University domains (common patterns)
-  '.edu',
-  'mit.edu',
-  'stanford.edu',
-  'berkeley.edu',
-  'harvard.edu',
-  'oxford.ac.uk',
-  'cambridge.ac.uk',
-  
-  // Research institutions
-  'nist.gov',
-  'nasa.gov',
-  'cern.ch',
-  'nih.gov',
-  'nsf.gov',
+  // Academic publishers
+  // 'ieee.org',
+  // 'acm.org',
+  // 'springer.com',
+  // 'arxiv.org',
+  // 'nature.com',
+  // 'science.org',
+  // 'sciencedirect.com',
+  // 'wiley.com',
+  // 'tandfonline.com',
+  // 'sagepub.com',
+  // 'mdpi.com',
+  // 'frontiersin.org',
+  // 'plos.org',
+  // 'oup.com',  // Oxford University Press
+  // 'cambridge.org',
+  // 
+  // // Research repositories
+  // 'researchgate.net',
+  // 'semanticscholar.org',
+  // 'scholar.google.com',
+  // 'pubmed.ncbi.nlm.nih.gov',
+  // 'ncbi.nlm.nih.gov',
+  // 'biorxiv.org',
+  // 'medrxiv.org',
+  // 'ssrn.com',
+  // 
+  // // University domains (common patterns)
+  // '.edu',
+  // 'mit.edu',
+  // 'stanford.edu',
+  // 'berkeley.edu',
+  // 'harvard.edu',
+  // 'oxford.ac.uk',
+  // 'cambridge.ac.uk',
+  // 
+  // // Research institutions
+  // 'nist.gov',
+  // 'nasa.gov',
+  // 'cern.ch',
+  // 'nih.gov',
+  // 'nsf.gov',
 ];
 
 /**

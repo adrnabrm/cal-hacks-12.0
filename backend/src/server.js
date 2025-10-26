@@ -1,26 +1,23 @@
+// src/server.js
 import express from 'express';
+import cors from 'cors';
 import { runWorkflow } from './agents/bright_data_agent.js';
-import retrieveRoute from './routes/retrieve.js'; 
 
 const app = express();
 const port = process.env.PORT || 8000;
 
-app.use(express.json());                   // good default
-// optional CORS if frontend is on another origin
-// import cors from 'cors'; app.use(cors());
+app.use(cors({ origin: 'http://localhost:3000' })); // frontend origin
+app.use(express.json());
 
 app.get('/agent', async (req, res) => {
   try {
     const q = req.query.q || 'latest AI developments 2025';
-    const data = await runWorkflow(q, { maxResults: 20 });
+    const data = await runWorkflow(q, { maxResults: 50 });
     res.json({ ok: true, ...data });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-// mount new endpoint
-app.use('/api/retrieve', retrieveRoute);
-
-app.get('/', (_req, res) => res.send('Backend running. Try /agent?q=... or /api/retrieve?topic=...'));
+app.get('/', (_req, res) => res.send('Backend running. Try /agent?q=...'));
 app.listen(port, () => console.log(`listening on :${port}`));
