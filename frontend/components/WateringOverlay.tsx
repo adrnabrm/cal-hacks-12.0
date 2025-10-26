@@ -1,7 +1,24 @@
 'use client';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect } from 'react';
 
 export default function WateringOverlay({ show }: { show: boolean }) {
+  const messages = [
+    'Growing your tree...',
+    'Finding related branches...',
+    'Gaining sunshine and happiness...',
+    'Absorbing nutrients...',
+  ];
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    if (!show) return;
+    const interval = setInterval(() => {
+      setIndex((prev) => (prev + 1) % messages.length);
+    }, 2500); // 2.5s per message
+    return () => clearInterval(interval);
+  }, [show]);
+
   return (
     <AnimatePresence>
       {show && (
@@ -11,16 +28,14 @@ export default function WateringOverlay({ show }: { show: boolean }) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.4 }}
-          style={{ pointerEvents: 'none' }}
           className="absolute inset-0 z-30 flex flex-col items-center justify-center select-none"
         >
-          <div className="flex flex-col items-center relative" style={{ pointerEvents: 'none' }}>
+          <div className="flex flex-col items-center relative">
             <motion.div
               className="relative left-[-3px]"
               initial={{ rotate: -20 }}
               animate={{ rotate: [-20, -10, -25, -10, -20] }}
               transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-              style={{ pointerEvents: 'none' }}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -38,15 +53,14 @@ export default function WateringOverlay({ show }: { show: boolean }) {
               </svg>
             </motion.div>
 
-            <div className="relative h-24 w-24 pointer-events-none">
+            <div className="relative h-40 w-24 pointer-events-none">
               {[...Array(6)].map((_, i) => (
                 <motion.div
                   key={i}
                   className="absolute w-2 h-4 bg-blue-400/80 rounded-full"
                   style={{
-                    left: `${40 + i * 4}%`, // spreads droplets horizontally
+                    left: `${40 + i * 4}%`,
                     transform: 'translateX(-50%)',
-                    pointerEvents: 'none',
                   }}
                   initial={{ y: -5, opacity: 0 }}
                   animate={{ y: [0, 35, 300], opacity: [0, 1, 0] }}
@@ -61,15 +75,18 @@ export default function WateringOverlay({ show }: { show: boolean }) {
             </div>
           </div>
 
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: [0, 1, 1, 0.85] }}
-            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-            className="text-green-800 mt-4 text-lg font-medium"
-            style={{ pointerEvents: 'none' }}
-          >
-            Growing your tree...
-          </motion.p>
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={messages[index]}
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -5 }}
+              transition={{ duration: 0.5 }}
+              className="text-green-800 mt-4 text-lg font-medium"
+            >
+              {messages[index]}
+            </motion.p>
+          </AnimatePresence>
         </motion.div>
       )}
     </AnimatePresence>

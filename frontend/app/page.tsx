@@ -43,19 +43,17 @@ export default function Home() {
             title: 'Grow Your Paper',
             text: 'Generate a solid literature foundation for your next publication with ease and clarity.',
           },
-        ].map(({icon, title, text}) => {
-          const content = (
-            <div
-              className="bg-white border border-green-100 shadow-md rounded-2xl p-6 flex flex-col items-center hover:shadow-lg transition-shadow hover:scale-[1.02] duration-200"
-            >
-              {icon}
-              <h2 className="text-xl font-semibold text-green-800 mb-2">{title}</h2>
-              <p className="text-green-600 text-sm">{text}</p>
-            </div>
-          );
-          
-          return content;
-        })}
+        ].map(({icon, title, text}, i) => (
+          <div
+            key={title || i}
+            className="bg-white border border-green-100 shadow-md rounded-2xl p-6 flex flex-col items-center hover:shadow-lg transition-shadow hover:scale-[1.02] duration-200"
+          >
+            {icon}
+            <h2 className="text-xl font-semibold text-green-800 mb-2">{title}</h2>
+            <p className="text-green-600 text-sm">{text}</p>
+          </div>
+        ))}
+
         
       </motion.section>
 
