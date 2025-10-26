@@ -1,6 +1,7 @@
 /**
- * Modified Workflow: MCP-Powered Research Agent with JSON Storage
- * Searches web, extracts content, stores summaries in JSON format, and saves markdown to files
+ * Modified Workflow: MCP-Powered Research Agent with JSON Storage + Chroma Cloud
+ * Searches web, extracts content, stores summaries in JSON format, saves markdown to files,
+ * and indexes content in Chroma Cloud for vector search
  */
 
 import 'dotenv/config';
@@ -8,6 +9,8 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { MultiServerMCPClient } from '@langchain/mcp-adapters';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
+import { CloudClient } from 'chromadb';
+import { GoogleGeminiEmbeddingFunction } from "@chroma-core/google-gemini";
 import { insertNode, updateNode } from '../database/nodes.js';
 import { uploadMarkdown } from '../services/markdownUploader.js';
 
@@ -16,6 +19,10 @@ const CONFIG = {
   apiKey: process.env.BRIGHTDATA_API_KEY,
   googleKey: process.env.GOOGLE_API_KEY,
   googleModel: process.env.GOOGLE_MODEL || 'gemini-2.5-flash',
+  chromaTenant: process.env.CHROMA_TENANT, // Chroma Cloud tenant ID
+  chromaDatabase: process.env.CHROMA_DATABASE || 'default_database', // Chroma Cloud database name
+  chromaApiKey: process.env.CHROMA_API_KEY, // Chroma Cloud API key
+  chromaCollection: process.env.CHROMA_COLLECTION || 'research_documents',
 };
 
 // Content processing constants
@@ -23,6 +30,9 @@ const CONTENT_LIMITS = {
   SCRAPE_PREVIEW: 3000,  // Characters to include per scraped page
   MAX_RESULTS: 5,        // Default maximum URLs to analyze
   MAX_DOMAINS_PER_SOURCE: 5, // Maximum pages per domain for diversity (increased for larger requests)
+  CHUNK_SIZE: 1000,      // Characters per chunk for embedding
+  CHUNK_OVERLAP: 200,    // Overlap between chunks
+  CHROMA_BATCH_SIZE: 100, // Maximum chunks per Chroma batch (Google API limit)
 };
 
 // Trusted academic and research domains
@@ -72,6 +82,121 @@ const TRUSTED_DOMAINS = [
 ];
 
 /**
+ * Initialize Chroma Cloud client and collection
+ */
+async function initializeChroma() {
+  console.log('Initializing Chroma Cloud connection...');
+  
+  // Chroma Cloud client - automatically uses env variables
+  const chromaClient = new CloudClient({
+    tenant: CONFIG.chromaTenant,
+    database: CONFIG.chromaDatabase,
+    apiKey: CONFIG.chromaApiKey,
+  });
+  
+  // Initialize Google embedding function
+  const embedder = new GoogleGeminiEmbeddingFunction({
+    apiKey: CONFIG.googleKey,
+  });
+  
+  // Get or create collection
+  let collection;
+  try {
+    collection = await chromaClient.getOrCreateCollection({
+      name: CONFIG.chromaCollection,
+      embeddingFunction: embedder,
+      metadata: { description: "Research documents from web scraping" }
+    });
+    console.log(`✓ Connected to Chroma Cloud`);
+    console.log(`  Tenant: ${CONFIG.chromaTenant}`);
+    console.log(`  Database: ${CONFIG.chromaDatabase}`);
+    console.log(`  Collection: ${CONFIG.chromaCollection}`);
+  } catch (error) {
+    console.error(`Failed to connect to Chroma: ${error.message}`);
+    throw error;
+  }
+  
+  return { chromaClient, collection };
+}
+
+/**
+ * Split text into chunks for embedding
+ */
+function chunkText(text, chunkSize = CONTENT_LIMITS.CHUNK_SIZE, overlap = CONTENT_LIMITS.CHUNK_OVERLAP) {
+  const chunks = [];
+  let start = 0;
+  
+  while (start < text.length) {
+    const end = Math.min(start + chunkSize, text.length);
+    chunks.push(text.slice(start, end));
+    start = end - overlap;
+    
+    // Avoid infinite loop on very small texts
+    if (start + overlap >= text.length) break;
+  }
+  
+  return chunks;
+}
+
+/**
+ * Add document to Chroma collection with proper batching
+ */
+async function addToChroma(collection, sourceData, markdownContent, query) {
+  try {
+    console.log('  - Chunking and embedding document...');
+    
+    const chunks = chunkText(markdownContent);
+    console.log(`    Created ${chunks.length} chunks`);
+    
+    const batchSize = CONTENT_LIMITS.CHROMA_BATCH_SIZE;
+    let totalAdded = 0;
+    const numBatches = Math.ceil(chunks.length / batchSize);
+    
+    for (let batchIndex = 0; batchIndex < numBatches; batchIndex++) {
+      const batchStart = batchIndex * batchSize;
+      const batchEnd = Math.min(batchStart + batchSize, chunks.length);
+      const batchChunks = chunks.slice(batchStart, batchEnd);
+    
+      const ids = batchChunks.map((_, idx) => `${sourceData.id}_chunk_${batchStart + idx}`);
+      const metadatas = batchChunks.map((_, idx) => ({
+        source_id: sourceData.id,
+        url: sourceData.url,
+        domain: sourceData.domain,
+        title: sourceData.title,
+        query: query,
+        chunk_index: batchStart + idx,
+        total_chunks: chunks.length,
+        scraped_at: sourceData.scrapedAt,
+        summary: sourceData.summary?.substring(0, 500) || '',
+      }));
+    
+      totalAdded += batchChunks.length;
+      console.log(`    Batch ${batchIndex + 1}/${numBatches}: Adding chunks ${batchStart + 1}-${batchEnd}`);
+    
+      await collection.add({
+        ids,
+        documents: batchChunks,
+        metadatas,
+      });
+    
+      // Optional: small delay
+      if (batchIndex < numBatches - 1) await new Promise(r => setTimeout(r, 500));
+    }    
+    
+    console.log(`  ✓ Successfully added ${totalAdded} chunks to Chroma`);
+    return { 
+      chunks: totalAdded, 
+      batches: numBatches,
+      ids: chunks.map((_, idx) => `${sourceData.id}_chunk_${idx}`) 
+    };
+    
+  } catch (error) {
+    console.error(`  ⚠️ Chroma indexing failed: ${error.message}`);
+    return { chunks: 0, error: error.message };
+  }
+}
+
+/**
  * Check if a URL is from a trusted academic/research domain
  */
 function isTrustedDomain(url) {
@@ -79,13 +204,10 @@ function isTrustedDomain(url) {
     const urlObj = new URL(url);
     const hostname = urlObj.hostname.toLowerCase();
     
-    // Check if hostname matches or ends with any trusted domain
     return TRUSTED_DOMAINS.some(trusted => {
-      // For patterns like '.edu', check if domain ends with it
       if (trusted.startsWith('.')) {
         return hostname.endsWith(trusted);
       }
-      // For full domains, check exact match or subdomain
       return hostname === trusted || hostname.endsWith('.' + trusted);
     });
   } catch {
@@ -122,32 +244,25 @@ function validateInput(query, maxResults) {
 
 /**
  * Selects diverse URLs from search results, filtering for trusted domains
- * Uses adaptive domain limits to reach target maxResults
  */
 function selectDiverseUrls(searchData, maxResults) {
   const urls = [];
   const perDomain = {};
   let skippedCount = 0;
   
-  // Calculate dynamic per-domain limit based on maxResults
-  // For small requests (≤5), limit to 2 per domain for diversity
-  // For larger requests, allow more per domain to reach the target
   const dynamicLimit = maxResults <= 5 ? 2 : Math.ceil(maxResults / 4);
-
+  
   if (searchData.organic && Array.isArray(searchData.organic)) {
-    // First pass: collect all trusted domain URLs
     for (const result of searchData.organic) {
       if (result.link) {
         try {
           const domain = new URL(result.link).hostname.replace('www.', '');
 
-          // Filter: Only accept trusted academic/research domains
           if (!isTrustedDomain(result.link)) {
             skippedCount++;
             continue;
           }
 
-          // Use dynamic limit per domain
           const currentFromDomain = perDomain[domain] || 0;
           if (urls.length < maxResults && currentFromDomain < dynamicLimit) {
             urls.push({
@@ -159,10 +274,7 @@ function selectDiverseUrls(searchData, maxResults) {
             perDomain[domain] = currentFromDomain + 1;
           }
           
-          // Stop once we have enough URLs
-          if (urls.length >= maxResults) {
-            break;
-          }
+          if (urls.length >= maxResults) break;
         } catch {
           // Skip invalid URLs
         }
@@ -217,8 +329,19 @@ async function runWorkflow(query, options = {}) {
   console.log(`Output file: ${outputFile}\n`);
 
   // Ensure md_files directory exists
-  await fs.mkdir('./md_files', { recursive: true });
-  console.log('✓ Markdown directory created/verified: ./md_files\n');
+  // await fs.mkdir('./md_files', { recursive: true });
+  // console.log('✓ Markdown directory created/verified: ./md_files\n');
+
+  // Initialize Chroma
+  let chromaClient, collection;
+  try {
+    const chroma = await initializeChroma();
+    chromaClient = chroma.chromaClient;
+    collection = chroma.collection;
+  } catch (error) {
+    console.warn('⚠️  Chroma initialization failed. Continuing without vector indexing.');
+    console.warn(`   Error: ${error.message}\n`);
+  }
 
   // Initialize MCP Client
   console.log('Step 1: Initializing MCP Client...');
@@ -277,19 +400,19 @@ async function runWorkflow(query, options = {}) {
   }
 
   // Scrape and summarize each source
-  console.log('Step 5: Scraping and summarizing sources...');
+  console.log('Step 5: Scraping, summarizing, and indexing sources...');
   const researchResults = {
     query,
     timestamp: new Date().toISOString(),
     totalSources: urls.length,
-    sources: []
+    sources: [],
+    chromaIndexed: 0,
   };
 
   for (let i = 0; i < urls.length; i++) {
     const urlData = urls[i];
     console.log(`\n[${i + 1}/${urls.length}] Processing: ${urlData.domain}`);
     
-    // Generate filename for markdown
     const filename = `${sanitizeFilename(urlData.domain)}-${i + 1}.md`;
     const filepath = `./md_files/${filename}`;
     
@@ -298,9 +421,31 @@ async function runWorkflow(query, options = {}) {
       console.log('  - Scraping content...');
       const content = await scrapeTool.invoke({ url: urlData.url });
       const contentText = typeof content === 'string' ? content : JSON.stringify(content);
-      
+      // 🧠 Skip binary or unreadable content (PDFs, images, corrupted data)
+      if (
+        !contentText ||
+        contentText.length < 200 ||
+        /[\x00-\x08\x0E-\x1F]/.test(contentText) ||     // binary control characters
+        !/[a-zA-Z]{10,}/.test(contentText.slice(0, 500)) // not enough readable text
+      ) {
+        console.log(`⚠️  Skipping non-text or unreadable content from ${urlData.url}`);
+        researchResults.sources.push({
+          id: `${sanitizeFilename(query)}_${i + 1}`,
+          url: urlData.url,
+          domain: urlData.domain,
+          title: urlData.title,
+          snippet: urlData.snippet,
+          summary: null,
+          markdownFile: filepath,
+          error: 'Skipped non-text or binary content',
+          scrapedAt: new Date().toISOString(),
+          status: 'skipped'
+        });
+        continue; // Skip to the next URL
+      }
+
       // Save markdown to file
-      console.log(`  - Saving markdown to ${filename}...`);
+      // console.log(`  - Saving markdown to ${filename}...`);
       // await fs.writeFile(filepath, contentText);
       
       // Generate summary
@@ -312,9 +457,8 @@ async function runWorkflow(query, options = {}) {
         query
       );
       
-      // Store in results
-      researchResults.sources.push({
-        id: i + 1,
+      const sourceData = {
+        id: `${sanitizeFilename(query)}_${i + 1}`,
         url: urlData.url,
         domain: urlData.domain,
         title: urlData.title,
@@ -323,8 +467,19 @@ async function runWorkflow(query, options = {}) {
         markdownFile: filepath,
         scrapedAt: new Date().toISOString(),
         status: 'success'
-      });
+      };
       
+      // Add to Chroma if available
+      if (collection) {
+        const chromaResult = await addToChroma(collection, sourceData, contentText, query);
+        sourceData.chromaChunks = chromaResult.chunks;
+        sourceData.chromaBatches = chromaResult.batches;
+        if (chromaResult.chunks > 0) {
+          researchResults.chromaIndexed++;
+        }
+      }
+
+      researchResults.sources.push(sourceData);
       console.log('  ✓ Complete');
        
       // === 🧩 SUPABASE INTEGRATION ===
@@ -366,9 +521,8 @@ async function runWorkflow(query, options = {}) {
     } catch (error) {
       console.log(`  ✗ Failed: ${error.message}`);
       
-      // Store failed attempt
       researchResults.sources.push({
-        id: i + 1,
+        id: `${sanitizeFilename(query)}_${i + 1}`,
         url: urlData.url,
         domain: urlData.domain,
         title: urlData.title,
@@ -396,7 +550,7 @@ async function runWorkflow(query, options = {}) {
   console.log(`Successful: ${researchResults.sources.filter(s => s.status === 'success').length}`);
   console.log(`Failed: ${researchResults.sources.filter(s => s.status === 'failed').length}`);
   console.log(`\nResults stored in: ${outputFile}`);
-  console.log(`Markdown files stored in: ./md_files/`);
+  //console.log(`Markdown files stored in: ./md_files/`);
   console.log('='.repeat(60));
 
   try {
@@ -419,7 +573,10 @@ function displayResults(results) {
       console.log(`\n[${idx + 1}] ${source.title}`);
       console.log(`Domain: ${source.domain}`);
       console.log(`URL: ${source.url}`);
-      console.log(`Markdown File: ${source.markdownFile}`);
+      //console.log(`Markdown File: ${source.markdownFile}`);
+      if (source.chromaChunks) {
+        console.log(`Chroma Chunks: ${source.chromaChunks}`);
+      }
       console.log(`\nSummary:`);
       console.log(source.summary);
       console.log('-'.repeat(80));
@@ -431,7 +588,6 @@ async function main() {
   try {
     const args = process.argv.slice(2);
     
-    // Parse command line arguments
     let query = 'latest AI developments 2025';
     let maxResults = CONTENT_LIMITS.MAX_RESULTS;
     let outputFile = 'research_results.json';
