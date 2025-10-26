@@ -26,15 +26,15 @@ const CONFIG = {
 
 // Content processing constants
 const CONTENT_LIMITS = {
-  SCRAPE_PREVIEW: 3000,  // Characters to include per scraped page
-  MAX_RESULTS: 50,        // Default maximum URLs to analyze
-  MAX_DOMAINS_PER_SOURCE: 5, // Maximum pages per domain for diversity (increased for larger requests)
-  CHUNK_SIZE: 1000,      // Characters per chunk for embedding
-  CHUNK_OVERLAP: 200,    // Overlap between chunks
-  CHROMA_BATCH_SIZE: 100, // Maximum chunks per Chroma batch (Google API limit)
+  MAX_RESULTS: 50,            // Default maximum URLs to analyze
+  MAX_DOMAINS_PER_SOURCE: 5,  // Maximum pages per domain for diversity
+  CHUNK_SIZE: 1000,           // Characters per chunk for embedding
+  CHUNK_OVERLAP: 200,         // Overlap between chunks
+  CHROMA_BATCH_SIZE: 100,     // Maximum chunks per Chroma batch (Google API limit)
+  SCRAPE_PREVIEW: 4000        // Characters passed to LLM for summary
 };
 
-// Trusted domains (unchanged)
+// Trusted domains
 const TRUSTED_DOMAINS = [
   'ieee.org', 'acm.org', 'springer.com', 'arxiv.org', 'nature.com',
   'science.org', 'sciencedirect.com', 'wiley.com', 'tandfonline.com',
@@ -43,7 +43,7 @@ const TRUSTED_DOMAINS = [
   'scholar.google.com', 'pubmed.ncbi.nlm.nih.gov', 'ncbi.nlm.nih.gov',
   'biorxiv.org', 'medrxiv.org', 'ssrn.com', '.edu', 'mit.edu',
   'stanford.edu', 'berkeley.edu', 'harvard.edu', 'oxford.ac.uk',
-  'cambridge.ac.uk', 'nist.gov', 'nasa.gov', 'cern.ch', 'nih.gov', 'nsf.gov',
+  'cambridge.ac.uk', 'nist.gov', 'nasa.gov', 'cern.ch', 'nih.gov', 'nsf.gov'
 ];
 
 /** Initialize Chroma Cloud client and collection */
@@ -52,7 +52,7 @@ async function initializeChroma() {
   const chromaClient = new CloudClient({
     tenant: CONFIG.chromaTenant,
     database: CONFIG.chromaDatabase,
-    apiKey: CONFIG.chromaApiKey,
+    apiKey: CONFIG.chromaApiKey
   });
 
   const embedder = new GoogleGeminiEmbeddingFunction({ apiKey: CONFIG.googleKey });
@@ -62,7 +62,7 @@ async function initializeChroma() {
     collection = await chromaClient.getOrCreateCollection({
       name: CONFIG.chromaCollection,
       embeddingFunction: embedder,
-      metadata: { description: "Research documents from web scraping" },
+      metadata: { description: "Research documents from web scraping" }
     });
     console.log(`✓ Connected to Chroma Cloud`);
   } catch (error) {
@@ -115,7 +115,7 @@ async function addToChroma(collection, sourceData, markdownContent, query) {
         chunk_index: batchStart + idx,
         total_chunks: chunks.length,
         scraped_at: sourceData.scrapedAt,
-        summary: sourceData.summary?.substring(0, 500) || '',
+        summary: sourceData.summary?.substring(0, 500) || ''
       }));
 
       await collection.add({ ids, documents: batchChunks, metadatas });
@@ -133,14 +133,20 @@ async function addToChroma(collection, sourceData, markdownContent, query) {
 }
 
 function sanitizeFilename(text, maxLength = 100) {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').substring(0, maxLength);
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .substring(0, maxLength);
 }
 
 function isTrustedDomain(url) {
   try {
     const hostname = new URL(url).hostname.toLowerCase();
     return TRUSTED_DOMAINS.some(domain =>
-      domain.startsWith('.') ? hostname.endsWith(domain) : hostname === domain || hostname.endsWith('.' + domain)
+      domain.startsWith('.')
+        ? hostname.endsWith(domain)
+        : hostname === domain || hostname.endsWith('.' + domain)
     );
   } catch {
     return false;
@@ -154,12 +160,12 @@ async function generateSummary(llm, content, sourceTitle, query) {
       {
         role: 'system',
         content:
-          'You are a research assistant specializing in educational summaries. Focus on explaining the core concepts and significance clearly.',
+          'You are a research assistant specializing in educational summaries. Focus on explaining the core concepts and significance clearly.'
       },
       {
         role: 'user',
-        content: `Research Query: ${query}\n\nSource: ${sourceTitle}\n\n${content}\n\nCreate a concise, educational summary.`,
-      },
+        content: `Research Query: ${query}\n\nSource: ${sourceTitle}\n\n${content}\n\nCreate a concise, educational summary.`
+      }
     ]);
     return response.content;
   } catch (error) {
@@ -175,7 +181,8 @@ async function runWorkflow(query, options = {}) {
   console.log(`\n${'='.repeat(60)}\nRESEARCH AGENT - Starting Workflow\n${'='.repeat(60)}`);
   console.log(`Research Topic: "${query}"\n`);
 
-  let chromaClient, collection;
+  let chromaClient;
+  let collection;
   try {
     const chroma = await initializeChroma();
     chromaClient = chroma.chromaClient;
@@ -186,7 +193,7 @@ async function runWorkflow(query, options = {}) {
 
   console.log('Step 1: Initializing MCP Client...');
   const client = new MultiServerMCPClient({
-    bright_data: { url: `https://mcp.brightdata.com/sse?token=${CONFIG.apiKey}&pro=1`, transport: 'sse' },
+    bright_data: { url: `https://mcp.brightdata.com/sse?token=${CONFIG.apiKey}&pro=1`, transport: 'sse' }
   });
 
   console.log('Step 2: Loading Bright Data Tools...');
@@ -196,7 +203,11 @@ async function runWorkflow(query, options = {}) {
   if (!searchTool || !scrapeTool) throw new Error('Required tools not found');
 
   console.log('Step 3: Initializing Gemini LLM...');
-  const llm = new ChatGoogleGenerativeAI({ apiKey: CONFIG.googleKey, model: CONFIG.googleModel, temperature: 0.3 });
+  const llm = new ChatGoogleGenerativeAI({
+    apiKey: CONFIG.googleKey,
+    model: CONFIG.googleModel,
+    temperature: 0.3
+  });
 
   console.log('Step 4: Searching the web...');
   const searchResult = await searchTool.invoke({ query: `${query} research paper`, engine: 'google' });
@@ -204,11 +215,11 @@ async function runWorkflow(query, options = {}) {
   const urls = (searchData.organic || [])
     .filter(r => r.link && isTrustedDomain(r.link))
     .slice(0, maxResults)
-    .map((r, i) => ({
+    .map(r => ({
       url: r.link,
       title: r.title || 'Untitled',
       snippet: r.description || '',
-      domain: new URL(r.link).hostname.replace('www.', ''),
+      domain: new URL(r.link).hostname.replace('www.', '')
     }));
 
   const researchResults = { query, timestamp: new Date().toISOString(), totalSources: urls.length, sources: [] };
@@ -224,9 +235,14 @@ async function runWorkflow(query, options = {}) {
       if (!contentText || contentText.length < 200) continue;
 
       console.log('  - Generating summary...');
-      const summary = await generateSummary(llm, contentText.substring(0, CONTENT_LIMITS.SCRAPE_PREVIEW), urlData.title, query);
+      const summary = await generateSummary(
+        llm,
+        contentText.substring(0, CONTENT_LIMITS.SCRAPE_PREVIEW),
+        urlData.title,
+        query
+      );
 
-      // 🧩 Insert into Supabase
+      // Insert into Supabase
       const treeId = process.env.TEST_TREE_ID || '00000000-0000-0000-0000-000000000001';
       const nodePayload = {
         tree_id: treeId,
@@ -236,9 +252,9 @@ async function runWorkflow(query, options = {}) {
           title: urlData.title,
           snippet: urlData.snippet,
           summary,
-          scraped_at: new Date().toISOString(),
+          scraped_at: new Date().toISOString()
         },
-        status: 'success',
+        status: 'success'
       };
 
       const node = await insertNode(treeId, nodePayload);
@@ -250,11 +266,16 @@ async function runWorkflow(query, options = {}) {
 
       // Add to Chroma
       if (collection) {
-        const chromaResult = await addToChroma(collection, { ...urlData, id: node.id, summary }, contentText, query);
+        const chromaResult = await addToChroma(
+          collection,
+          { ...urlData, id: node.id, summary },
+          contentText,
+          query
+        );
         if (chromaResult.chunks > 0) {
           await updateNode(node.id, {
             embedding_id: chromaResult.ids, // text[] in schema
-            vectorized: true,
+            vectorized: true
           });
         }
       }
@@ -263,16 +284,15 @@ async function runWorkflow(query, options = {}) {
         id: node.id,
         url: urlData.url,
         summary,
-        status: 'success',
+        status: 'success'
       });
-
     } catch (error) {
       console.error(`  ✗ Failed: ${error.message}`);
       researchResults.sources.push({
         id: `${sanitizeFilename(query)}_${i + 1}`,
         url: urlData.url,
         status: 'failed',
-        error: error.message,
+        error: error.message
       });
     }
   }
@@ -300,3 +320,4 @@ const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.arg
 if (isMain) main();
 
 export { runWorkflow };
+
