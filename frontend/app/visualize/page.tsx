@@ -298,12 +298,29 @@ export default function VisualizePage() {
 
   // --- Tab handlers ---
   const addTree = () => {
-    if (Object.keys(trees).length >= 5) return alert('Max 5 trees');
-    const id = `tree_${Date.now()}`;
-    setTrees({ ...trees, [id]: null });
-    setTabNames({ ...tabNames, [id]: `Tree ${Object.keys(trees).length + 1}` });
-    setActiveTab(id);
+    setTrees((prevTrees) => {
+      const treeCount = Object.keys(prevTrees).length;
+
+      // If max limit reached
+      if (treeCount >= 5) {
+        // Always show the alert on the next tick so it doesn’t get swallowed
+        setTimeout(() => {
+          alert('🌳 You’ve reached the maximum of 5 trees. Please delete one before adding another.');
+        }, 0);
+        return prevTrees; // Don't change anything
+      }
+
+      // Otherwise, safely create a new tree
+      const id = `tree_${Date.now()}`;
+      const name = `Tree ${treeCount + 1}`;
+
+      setTabNames((prevNames) => ({ ...prevNames, [id]: name }));
+      setActiveTab(id);
+
+      return { ...prevTrees, [id]: null };
+    });
   };
+
   const delTree = (id: string) => {
     if (!confirm(`Delete ${tabNames[id]}?`)) return;
     const newTrees = { ...trees };
@@ -331,9 +348,27 @@ export default function VisualizePage() {
   const submitPaper = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
+
+    // Determine whether we need to create a new tab first
+    const existingKeys = Object.keys(trees);
+    let newTrees = { ...trees };
+    let newNames = { ...tabNames };
+    let currentTab = activeTab;
+
+    // If there are no existing trees or the active one is missing, make a new tab
+    if (existingKeys.length === 0 || !newTrees[currentTab]) {
+      const newId = `tree_${Date.now()}`;
+      const nextNumber = Object.keys(newNames).length + 1;
+      newTrees = { ...newTrees, [newId]: null };
+      newNames = { ...newNames, [newId]: `Tree ${nextNumber}` };
+      currentTab = newId;
+      setActiveTab(newId);
+    }
+
+    // Create the seed paper tree in the active or newly created tab
     setTrees({
-      ...trees,
-      [activeTab]: {
+      ...newTrees,
+      [currentTab]: {
         id: 'seed',
         title: `Seed Paper: ${inputValue}`,
         authors: ['Placeholder Author'],
@@ -342,6 +377,8 @@ export default function VisualizePage() {
         children: [],
       },
     });
+
+    setTabNames(newNames);
     setInputValue('');
   };
 
