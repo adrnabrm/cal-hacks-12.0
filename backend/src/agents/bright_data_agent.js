@@ -301,7 +301,7 @@ async function runWorkflow(query, options = {}) {
       
       // Save markdown to file
       console.log(`  - Saving markdown to ${filename}...`);
-      await fs.writeFile(filepath, contentText);
+      // await fs.writeFile(filepath, contentText);
       
       // Generate summary
       console.log('  - Generating summary...');
