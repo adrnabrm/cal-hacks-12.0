@@ -1,4 +1,4 @@
-# 🧠 tResearch
+# 🌳 tResearch 🌳
 
 ### Overview  
 **tResearch** is an **agentic AI platform** that autonomously discovers, summarizes, and connects scholarly resources.  
