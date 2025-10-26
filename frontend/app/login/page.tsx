@@ -14,7 +14,7 @@ export default function LoginPage() {
 
     // TODO: Replace this with your real auth logic later
     // Simulate successful login/signup and redirect
-    router.push('/visualize');
+    router.push('/library');
   };
 
   return (
