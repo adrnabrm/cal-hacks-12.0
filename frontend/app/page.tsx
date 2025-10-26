@@ -13,11 +13,11 @@ export default function Home() {
         className="w-full max-w-5xl mb-16"
       >
         <div className="flex items-center justify-center gap-3 mb-6">
-          <Leaf className="text-green-600 w-10 h-10" />
-          <h1 className="text-4xl font-bold text-green-800">tResearch</h1>
+          <Leaf className="text-green-600 w-28 h-24" />
+          <h1 className="text-7xl font-bold text-green-800">tResearch</h1>
         </div>
-        <p className="text-lg text-green-700 max-w-2xl mx-auto">
-          A smarter, more efficient way to discover and visualize academic knowledge. Build your paper from a forest of connected research.
+        <p className="text-lg italic text-green-700 max-w-2xl mx-auto">
+            Grow Your Knowledge
         </p>
       </motion.header>
 
