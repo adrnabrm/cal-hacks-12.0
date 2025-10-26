@@ -2,7 +2,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import { runWorkflow } from "./agents/bright_data_agent.js";
-import { supabase } from "../supabaseClient.js";
+import { supabase } from "./database/supabaseClient.js";
 import { requireAuth } from "../middleware/auth.js";
 
 dotenv.config();
