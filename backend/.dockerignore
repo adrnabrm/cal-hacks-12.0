@@ -1,4 +1,24 @@
-__pycache__
-*.pyc
-.git
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+.pnpm-store
+.cache
+
+# Environment
 .env
+.env.local
+
+# Git
+.git
+.gitignore
+
+# Logs
+*.log
+
+# Build outputs
+dist
+build
+coverage
+tmp
+.DS_Store
