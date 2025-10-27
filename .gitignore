@@ -1,2 +1,16 @@
-.env
-venv/
+# Ignore dependencies everywhere
+**/node_modules
+
+# Ignore Next.js build folders
+**/.next
+
+# Ignore build outputs
+**/dist
+**/build
+**/coverage
+
+# Ignore OS cruft
+.DS_Store
+
+# Ignore env files
+*.env
