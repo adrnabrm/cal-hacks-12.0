@@ -58,7 +58,7 @@ BRIGHT_DATA_API_KEY=your_brightdata_key
 SUPABASE_URL=https://yourproject.supabase.co
 SUPABASE_KEY=your_supabase_service_key
 CHROMA_TOKEN=your_chromadb_token
-
+```
 
 # CalHacks 12.0
 UC Berkeley 40-hour Hackathon project made by:
