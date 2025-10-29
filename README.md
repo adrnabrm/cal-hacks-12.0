@@ -52,12 +52,24 @@ docker compose up --build
 
 #### `.env` Example
 ```env
-PORT=8080
-GEMINI_API_KEY=your_gemini_key
-BRIGHT_DATA_API_KEY=your_brightdata_key
-SUPABASE_URL=https://yourproject.supabase.co
-SUPABASE_KEY=your_supabase_service_key
-CHROMA_TOKEN=your_chromadb_token
+DATABASE_URL=postgresql://user:password@localhost:5432/mydatabase
+SUPABASE_URL=https://xyzcompany.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.service_role_secret
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.anon_public_key
+NEXT_PUBLIC_SUPABASE_URL=https://xyzcompany.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.anon_public_key
+
+TEST_TREE_ID=test-tree-12345
+
+CHROMA_API_KEY=chroma_api_key_abcdef123456
+CHROMA_TENANT=my-tenant-id
+CHROMA_DATABASE=my-chroma-db
+CHROMA_COLLECTION=my-chroma-collection
+
+GEMINI_API_KEY=gemini_api_key_abcdef123456
+GOOGLE_API_KEY=google_api_key_abcdef123456
+
+BRIGHTDATA_API_KEY=brightdata_api_key_abcdef123456
 ```
 
 # CalHacks 12.0
